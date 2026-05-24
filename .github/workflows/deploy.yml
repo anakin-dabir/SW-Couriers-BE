@@ -1,0 +1,46 @@
+name: Deploy to OVH VPS
+
+on:
+  push:
+    branches:
+      - develop     # triggers on push to develop branch
+      - staging     # triggers on push to staging branch
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Deploy to STAGING branch
+      - name: Deploy to Staging
+        if: github.ref == 'refs/heads/staging'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEV_HOST }}
+          username: ${{ secrets.DEV_USER }}
+          password: ${{ secrets.DEV_DO_NOT_DELETE }}
+          port: ${{ secrets.DEV_PORT }}
+          script: |
+            cd /var/www/SW-Couriers-BE
+            git pull origin staging
+            docker compose -f docker-compose.staging.yml --env-file .env.local down
+            docker compose -f docker-compose.staging.yml --env-file .env.local up -d --build
+
+      # Deploy to Development (develop branch)
+      - name: Deploy to Development
+        if: github.ref == 'refs/heads/develop'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEV_HOST }}
+          username: ${{ secrets.DEV_USER }}
+          password: ${{ secrets.DEV_DO_NOT_DELETE }}
+          port: ${{ secrets.DEV_PORT }}
+          script: |
+            cd /var/www/SW-Couriers-Dev
+            git pull origin develop
+            docker compose -f docker-compose.yml --env-file .env.local down
+            docker compose -f docker-compose.yml --env-file .env.local up -d --build
