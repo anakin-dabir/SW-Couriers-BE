@@ -1,0 +1,2 @@
+"""Status automation rules module."""
+

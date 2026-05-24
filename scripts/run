@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Usage: ./scripts/run [uvicorn args...]
+# Examples: 
+#   ./scripts/run
+#   ./scripts/run --host 0.0.0.0
+#   ./scripts/run --port 8001 --reload
+
+set -e
+cd "$(dirname "$0")/.."
+# Check if we are inside a virtualenv already or if one exists in the project root
+if [ -d "venv" ]; then
+    echo "Using project venv..."
+    PYTHONPATH=. ./venv/bin/python -m uvicorn app.main:app --reload "$@"
+elif [ -d ".venv" ]; then
+    echo "Using project .venv..."
+    PYTHONPATH=. ./.venv/bin/python -m uvicorn app.main:app --reload "$@"
+else
+    echo "Using poetry..."
+    poetry run uvicorn app.main:app --reload "$@"
+fi

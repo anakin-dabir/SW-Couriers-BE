@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Usage: ./scripts/lint [ruff args...]
+# Default: check only (CI-safe). For local auto-fix: ./scripts/lint --fix
+# Examples:
+#   ./scripts/lint
+#   ./scripts/lint --fix
+#   ./scripts/lint --fix --output-format=concise
+
+set -e
+cd "$(dirname "$0")/.."
+poetry run ruff check . "$@" --output-format=concise

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}SW Couriers{% endblock %}</title>
+</head>
+
+<body style="margin:0;padding:0;background-color:#f3f3f3;font-family:Arial,Helvetica,sans-serif;color:#171923;">
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background-color:#f3f3f3;padding:28px 12px 36px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:540px;">
+          <tr>
+            <td align="center" style="padding:0 0 18px 0;">
+              {% if email_logo_url %}
+              <img src="{{ email_logo_url }}" alt="SW Couriers" width="112" style="display:block;width:112px;max-width:112px;height:auto;border:0;" />
+              {% else %}
+              <div style="font-size:28px;line-height:24px;font-weight:700;font-style:italic;color:#b6242c;letter-spacing:-1px;">SW</div>
+              <div style="font-size:13px;line-height:16px;font-weight:700;font-style:italic;color:#20232a;">COURIERS</div>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <td style="background:#ffffff;padding:34px 36px 36px 36px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#ffffff;">
+                <tr>
+                  <td style="padding:0 0 24px 0;text-align:center;">
+                    <p style="margin:0;font-size:20px;font-weight:700;line-height:1.35;color:#141720;">{{ self.title() }}</p>
+                  </td>
+                </tr>
+                {% block content %}{% endblock %}
+              </table>
+              <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td style="padding:28px 0 0 0;font-size:14px;color:#20232a;line-height:1.5;">
+                    <p style="margin:0 0 18px 0;">If you need any assistance, please contact us at<br><a href="mailto:{{ support_email }}" style="color:#b6242c;text-decoration:underline;">{{ support_email }}</a>.</p>
+                    <p style="margin:0;">Regards,</p>
+                    <p style="margin:0;">SW Couriers System</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+
+</html>

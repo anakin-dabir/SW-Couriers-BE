@@ -1,0 +1,131 @@
+# 0. Git SSH setup and clone
+sudo apt update
+sudo apt install -y git
+ssh-keygen -t ed25519 -C "vps-deploy-swcouriers" -f ~/.ssh/id_ed25519_swcouriers
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+
+# Edit ~/.ssh/config (add Host github.com block), then:
+chmod 600 ~/.ssh/config
+cat ~/.ssh/id_ed25519_swcouriers.pub
+ssh -T git@github.com
+sudo mkdir -p /var/www
+sudo chown "$USER:$USER" /var/www
+cd /var/www
+git clone git@github.com:YOUR_ORG/SW-Couriers-BE.git SW-Couriers-BE
+cd SW-Couriers-BE
+
+# 0.1 Ownership and permissions (ubuntu + www-data so you can git pull/poetry and app can run)
+sudo usermod -aG www-data ubuntu
+sudo chown -R ubuntu:www-data /var/www/SW-Couriers-BE
+
+# Apply 775 to every dir and 664 to every file under the app tree (chmod -R would make all files executable)
+sudo find /var/www/SW-Couriers-BE -type d -exec chmod 775 {} \;
+sudo find /var/www/SW-Couriers-BE -type f -exec chmod 664 {} \;
+
+# Venv binaries must be executable by both (775)
+sudo chmod -R 775 /var/www/SW-Couriers-BE/.venv/bin
+
+# .env: owner read/write, group read (so www-data can read it)
+chmod 640 /var/www/SW-Couriers-BE/.env
+
+# If dubious ownership:
+git config --global --add safe.directory /var/www/SW-Couriers-BE
+
+# 1. Install system packages (PostgreSQL 16, PostGIS, Redis, Nginx, Python)
+sudo apt update
+sudo apt install -y gnupg2 curl
+curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+echo "deb [signed-by=/etc/apt/trusted.gpg.d/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+sudo apt update
+sudo apt install -y postgresql-16 postgresql-contrib-16 redis-server nginx python3.12 python3.12-venv python3-pip
+sudo apt install -y postgresql-16-postgis-3
+
+# TimescaleDB
+curl -fsSL https://packagecloud.io/timescale/timescaledb/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/timescaledb-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/timescaledb-archive-keyring.gpg] https://packagecloud.io/timescale/timescaledb/ubuntu/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/timescaledb.list
+sudo apt update
+sudo apt install -y timescaledb-2-postgresql-16
+sudo timescaledb-tune --quiet --yes
+sudo systemctl restart postgresql
+
+# 2. PostgreSQL (create user and database)
+sudo -u postgres psql -c "CREATE USER swcouriers WITH PASSWORD 'YOUR_SECURE_PASSWORD';"
+sudo -u postgres psql -c "CREATE DATABASE swcouriers_dev OWNER swcouriers;"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE swcouriers_dev TO swcouriers;"
+
+# 3. Redis
+sudo systemctl enable redis-server
+sudo systemctl start redis-server
+sudo systemctl status redis-server
+
+# 4. App directory and Python env
+cd /var/www/SW-Couriers-BE
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install poetry
+poetry install --no-dev
+
+# 5. Environment file
+cp .env.example .env
+nano .env
+
+# 6. Database migrations
+cd /var/www/SW-Couriers-BE
+source .venv/bin/activate
+alembic upgrade head
+
+# 7.1 Gunicorn (copy service file from deploy/gunicorn/, then)
+sudo cp /var/www/SW-Couriers-BE/deploy/gunicorn/swcouriers-gunicorn.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable swcouriers-gunicorn
+sudo systemctl start swcouriers-gunicorn
+sudo journalctl -u swcouriers-gunicorn -f
+
+# 7.2 Arq workers (copy deploy/gunicorn/swcouriers-arq-*.service to /etc/systemd/system/, then)
+sudo cp /var/www/SW-Couriers-BE/deploy/gunicorn/swcouriers-arq-high.service /etc/systemd/system/
+sudo cp /var/www/SW-Couriers-BE/deploy/gunicorn/swcouriers-arq-default.service /etc/systemd/system/
+sudo cp /var/www/SW-Couriers-BE/deploy/gunicorn/swcouriers-arq-low.service /etc/systemd/system/
+sudo cp /var/www/SW-Couriers-BE/deploy/gunicorn/swcouriers-arq-notification.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable swcouriers-arq-high swcouriers-arq-default swcouriers-arq-low swcouriers-arq-notification
+sudo systemctl start swcouriers-arq-high swcouriers-arq-default swcouriers-arq-low swcouriers-arq-notification
+
+# 7.3 Nginx (copy deploy/nginx/* to snippets and sites-available, edit server_name to YOUR_SERVER_IP, then)
+sudo mkdir -p /etc/nginx/snippets
+sudo cp /var/www/SW-Couriers-BE/deploy/nginx/swcouriers-api.conf /etc/nginx/snippets/swcouriers-api.conf
+sudo cp /var/www/SW-Couriers-BE/deploy/nginx/swcouriers.conf /etc/nginx/sites-available/swcouriers
+sudo ln -s /etc/nginx/sites-available/swcouriers /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+
+# Install Certbot Nginx plugin (required for certbot --nginx)
+sudo apt install -y certbot python3-certbot-nginx
+
+# When you have a hostname: sudo certbot --nginx -d api.yourdomain.com
+
+# SSL auto-renewal (enable timer and test)
+sudo systemctl enable certbot.timer
+sudo systemctl list-timers | grep certbot
+sudo certbot renew --dry-run
+# If no timer: crontab -e and add: 0 0,12 * * * certbot renew --quiet --deploy-hook "systemctl reload nginx"
+
+# After making changes
+# Code (git pull): 
+cd /var/www/SW-Couriers-BE && git pull
+
+# If deps changed: 
+source .venv/bin/activate && poetry install --no-dev
+
+# Restart app and workers: 
+sudo systemctl restart swcouriers-gunicorn swcouriers-arq-high swcouriers-arq-default swcouriers-arq-low swcouriers-arq-notification
+
+# New migrations: 
+cd /var/www/SW-Couriers-BE && source .venv/bin/activate && alembic upgrade head && sudo systemctl restart swcouriers-gunicorn swcouriers-arq-high swcouriers-arq-default swcouriers-arq-low
+
+# Nginx config: 
+sudo nginx -t && sudo systemctl reload nginx
+
+# Systemd unit changed: 
+sudo systemctl daemon-reload && sudo systemctl restart <unit-name>

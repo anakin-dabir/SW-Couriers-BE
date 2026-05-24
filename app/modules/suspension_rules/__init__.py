@@ -1,0 +1,1 @@
+"""Account suspension rules module."""

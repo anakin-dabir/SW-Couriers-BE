@@ -1,0 +1,1 @@
+"""Holidays API tests."""

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Usage: ./scripts/typecheck
+
+set -e
+cd "$(dirname "$0")/.."
+poetry run pyright

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Usage: ./scripts/migrate [alembic args...]
+# Examples:
+#   ./scripts/migrate upgrade head
+#   ./scripts/migrate downgrade -1
+#   ./scripts/migrate revision --autogenerate -m "initial user"
+#   ./scripts/migrate current
+#   ./scripts/migrate history
+
+set -e
+cd "$(dirname "$0")/.."
+
+# Check if we are inside a virtualenv already or if one exists in the project root
+if [ -d "venv" ]; then
+    echo "Using project venv..."
+    PYTHONPATH=. ./venv/bin/alembic "$@"
+elif [ -d ".venv" ]; then
+    echo "Using project .venv..."
+    PYTHONPATH=. ./.venv/bin/alembic "$@"
+else
+    echo "Using poetry..."
+    poetry run alembic "$@"
+fi

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Set up your account{% endblock %}
+
+{% block content %}
+            <tr>
+              <td style="padding:0 0 8px 0;font-size:15px;color:#171923;line-height:1.55;">
+                <p style="margin:0 0 12px 0;">Hello {{ name }},</p>
+                <p style="margin:0 0 12px 0;">
+                  You've been invited to join SW Couriers. Set up your account by choosing a password
+                  using the link below. This link will expire in <strong>{{ expires_days }} {{ day_label }}</strong>.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:8px 0 24px 0;">
+                <a href="{{ invite_link }}"
+                   style="display:inline-block;width:100%;max-width:260px;background-color:#b6242c;color:#ffffff;text-decoration:none;text-align:center;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;">
+                  Set up your account
+                </a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 0 16px 0;font-size:14px;color:#475467;line-height:1.5;">
+                <div>
+                  <p style="margin:0 0 10px 0;">If the button does not work, copy and paste this link into your browser:</p>
+                  <p style="word-break:break-all;margin:0 0 10px 0;color:#2563eb;font-size:12px;">{{ invite_link }}</p>
+                  <p style="margin:0 0 10px 0;">If you did not expect this invitation, you can safely ignore this email.</p>
+                </div>
+              </td>
+            </tr>
+{% endblock %}
+
+{% block footer_help %}
+If you have any problems setting up your account, please contact the person who invited you
+or our support team through the SW Couriers portal.
+{% endblock %}

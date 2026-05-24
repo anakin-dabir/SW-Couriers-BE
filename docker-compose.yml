@@ -1,0 +1,145 @@
+# ─────────────────────────────────────────────────────────────────
+# SW Couriers — Local Development Stack
+#
+# Services:
+#   postgres  → PostgreSQL 16 + TimescaleDB
+#   redis     → Redis 7 (cache + Arq task queue)
+#   api       → FastAPI (uvicorn), runs migrations on start
+#   worker-*  → Arq worker tiers (high / default / low / notifications)
+#
+# Usage:
+#   docker compose up -d --build   # build + start all
+#   docker compose logs -f api     # tail API logs
+#   docker compose down            # stop (keep volumes)
+#   docker compose down -v         # stop + destroy data
+#
+# Env vars the API needs:
+#   Copy .env.example → .env.local and fill in real secrets.
+#   DATABASE_URL and REDIS_URL are injected below via the internal
+#   service names — do NOT override them in .env.local.
+# ─────────────────────────────────────────────────────────────────
+
+services:
+  postgres:
+    image: timescale/timescaledb-ha:pg16
+    container_name: swc-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    environment:
+      POSTGRES_USER: ${DB_USER:-swcouriers}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-swcouriers_local}
+      POSTGRES_DB: ${DB_NAME:-swcouriers_dev}
+    volumes:
+      - pgdata:/home/postgres/pgdata/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-swcouriers} -d ${DB_NAME:-swcouriers_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: swc-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sw-couriers-be:dev
+    container_name: swc-api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    env_file:
+      - .env.local
+    environment:
+      # Override DB/Redis URLs to use internal Docker service names
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-swcouriers}:${DB_PASSWORD:-swcouriers_local}@postgres:5432/${DB_NAME:-swcouriers_dev}
+      REDIS_URL: redis://redis:6379/0
+    command: ["./scripts/docker-start"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker-high:
+    image: sw-couriers-be:dev
+    container_name: swc-worker-high
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-swcouriers}:${DB_PASSWORD:-swcouriers_local}@postgres:5432/${DB_NAME:-swcouriers_dev}
+      REDIS_URL: redis://redis:6379/0
+    command: ["./scripts/worker", "high"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  worker-default:
+    image: sw-couriers-be:dev
+    container_name: swc-worker-default
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-swcouriers}:${DB_PASSWORD:-swcouriers_local}@postgres:5432/${DB_NAME:-swcouriers_dev}
+      REDIS_URL: redis://redis:6379/0
+    command: ["./scripts/worker", "default"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  worker-low:
+    image: sw-couriers-be:dev
+    container_name: swc-worker-low
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-swcouriers}:${DB_PASSWORD:-swcouriers_local}@postgres:5432/${DB_NAME:-swcouriers_dev}
+      REDIS_URL: redis://redis:6379/0
+    command: ["./scripts/worker", "low"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  worker-notifications:
+    image: sw-couriers-be:dev
+    container_name: swc-worker-notifications
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-swcouriers}:${DB_PASSWORD:-swcouriers_local}@postgres:5432/${DB_NAME:-swcouriers_dev}
+      REDIS_URL: redis://redis:6379/0
+    command: ["./scripts/worker", "notifications"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+    external: true
+    name: swc-dev_pgdata
+  redisdata:
+    driver: local

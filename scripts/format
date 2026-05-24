@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Usage: ./scripts/format [black args...]
+# Examples: 
+#   ./scripts/format
+#   ./scripts/format --check
+#   ./scripts/format --fix
+#   ./scripts/format app/ tests/
+
+set -e
+cd "$(dirname "$0")/.."
+poetry run black . "$@"

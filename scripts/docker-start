@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Entrypoint for the API container.
+# Runs Alembic migrations then starts uvicorn.
+set -e
+
+cd "$(dirname "$0")/.."
+
+echo "Running database migrations..."
+PYTHONPATH=. alembic upgrade head
+
+echo "Starting API server..."
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000

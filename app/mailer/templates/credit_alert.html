@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<tr>
+  <td style="padding:0 0 16px 0;text-align:center;">
+    {% if severity == "CRITICAL" %}
+      <span style="display:inline-block;padding:4px 10px;border-radius:999px;background-color:#fee2e2;color:#b91c1c;font-size:12px;font-weight:600;letter-spacing:.4px;">CRITICAL</span>
+    {% else %}
+      <span style="display:inline-block;padding:4px 10px;border-radius:999px;background-color:#fef3c7;color:#b45309;font-size:12px;font-weight:600;letter-spacing:.4px;">WARNING</span>
+    {% endif %}
+  </td>
+</tr>
+<tr>
+  <td style="padding:0 0 8px 0;font-size:15px;color:#171923;line-height:1.55;">
+    <p style="margin:0 0 8px 0;">Hi {{ recipient_name|default("there") }},</p>
+    <p style="margin:0 0 16px 0;">A credit alert has been triggered for <strong>{{ org_name }}</strong>.</p>
+
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border:1px solid #e5e7eb;border-radius:8px;">
+      <tr>
+        <td style="padding:12px 14px;border-bottom:1px solid #e5e7eb;">
+          <div style="font-size:12px;color:#475467;text-transform:uppercase;letter-spacing:.4px;">Alert</div>
+          <div style="font-size:15px;color:#171923;font-weight:600;margin-top:2px;">{{ title }}</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:12px 14px;border-bottom:1px solid #e5e7eb;">
+          <div style="font-size:12px;color:#475467;text-transform:uppercase;letter-spacing:.4px;">Summary</div>
+          <div style="font-size:14px;color:#171923;margin-top:2px;">{{ summary }}</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:12px 14px;">
+          <div style="font-size:12px;color:#475467;text-transform:uppercase;letter-spacing:.4px;">Triggered</div>
+          <div style="font-size:14px;color:#171923;margin-top:2px;">{{ triggered_at_display }}</div>
+        </td>
+      </tr>
+    </table>
+
+    {% if action_url %}
+    <p style="margin:20px 0 0 0;text-align:center;">
+      <a href="{{ action_url }}"
+        style="display:inline-block;padding:10px 18px;background-color:#b6242c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+        Review in SW Couriers
+      </a>
+    </p>
+    {% endif %}
+  </td>
+</tr>
+{% endblock %}
+
+{% block footer_help %}Manage alert settings in the Credit Management &rarr; Alerts tab.{% endblock %}

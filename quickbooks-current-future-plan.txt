@@ -1,0 +1,418 @@
+# QuickBooks One-Way Sync: Current and Future Plan
+
+## Objective
+- Keep one-way sync from SW -> QuickBooks as the accounting sink.
+- Avoid data redundancy and denormalization.
+- Deliver what is safe now, and explicitly defer payment-transaction sync until upstream payment-event model is merged.
+- Add continuous automatic sync after every accounting-relevant operation in near real-time (async), with production-grade scalability and security.
+
+## Deep Analysis Summary
+
+### What exists today
+- QuickBooks integration persistence exists:
+  - `QbConnection`, `QbLink`, `QbSyncLog` in `app/integrations/quickbooks/models.py`
+- Sync orchestration exists:
+  - customer/invoice/credit-note + credit-application sync in `app/integrations/quickbooks/service.py`
+- QuickBooks APIs currently exposed:
+  - connect-url, callback, status, disconnect, customer sync, invoice sync, credit-note sync in `app/integrations/quickbooks/routes.py`
+- Invoice domain state exists:
+  - `payment_status`, `paid_amount`, `braintree_transaction_id` in `app/modules/invoices/models.py`
+- Invoice lifecycle events exist:
+  - `InvoiceEvent` with lifecycle-focused event types in `app/modules/invoices/models.py` and `app/modules/invoices/enums.py`
+
+### What is missing for full payment sync
+- No normalized payment-transaction/event ledger tied to invoice accounting posting.
+- Existing invoice snapshot fields are not enough for replay-safe partial/refund/reversal posting.
+- `invoice_events` is lifecycle/audit oriented; overloading it with full payment posting semantics would mix concerns.
+
+## Design Rules (No Redundancy / No Denormalization)
+- Keep `invoice_events` lifecycle-only.
+- Do not duplicate payment history into multiple sources.
+- Introduce exactly one canonical mapping source for QuickBooks references.
+- Keep local domain as source of truth; QuickBooks never mutates local business state.
+
+## Continuous Automatic Sync (Production-Grade)
+
+### Sync Strategy
+- Every accounting-relevant local write enqueues a QuickBooks sync job after DB commit.
+- Sync runs asynchronously in workers; main business APIs do not block on QuickBooks calls.
+- Use deterministic job IDs keyed by entity + version to prevent duplicate queue work.
+- Maintain idempotent sync behavior in service layer with `qb_links` + payload fingerprint.
+
+### Trigger Matrix (Current + Future)
+- Customer created/updated -> enqueue customer sync.
+- Invoice finalized/changed in accounting-impacting fields -> enqueue invoice sync.
+- Credit note issued/updated -> enqueue credit-note sync.
+- Credit application created/updated -> enqueue invoice sync (credit application path).
+- Invoice voided/written-off -> enqueue invoice sync (mapped adjustment behavior).
+- Payment captured/partial/refund/reversal -> enqueue payment sync (future; blocked by payment-event dependency).
+
+### Scalability and Reliability
+- Per-organization concurrency cap + global worker cap.
+- Exponential backoff on transient failures (5xx/429/network).
+- Terminal failures (validation/mapping) fail fast and surface in sync logs.
+- Health observability for queue lag, failure rate, and retry exhaustion.
+
+### Security and Operational Safety
+- Keep token handling encrypted and never log secrets.
+- Strict validation gate before outbound payload submission.
+- Policy-gated force operations through org settings.
+- Reconciliation loop periodically checks link/log drift and raises actionable failures.
+
+### OAuth Lifecycle Hardening (Rotating Refresh Tokens)
+- QuickBooks refresh token rotation is mandatory: every successful refresh replaces both access and refresh tokens.
+- Proactive refresh starts before access token expiry (`expires_at - lead_window`, recommended 10 minutes).
+- Add periodic keep-alive refresh to reduce reconnect risk for low-traffic orgs.
+- Enforce single refresh in-flight per organization (distributed lock + optimistic DB version checks).
+- Reject stale token writes so an older worker cannot overwrite a newly rotated refresh token.
+- On terminal auth failure (revoked/expired refresh token), mark connection `RECONNECT_REQUIRED` and stop retry storms.
+
+### FE vs BE Responsibility Model (Production)
+- FE responsibility:
+  - one-time `Connect` / `Reconnect` OAuth initiation and callback completion.
+  - show status and operator controls (`Reconnect`, view failures, replay).
+- Backend responsibility (default path after connection):
+  - use current token for all QBO calls.
+  - refresh tokens automatically.
+  - retry transient failures.
+  - classify/log outcomes and keep sync moving without FE intervention.
+- FE is required again only when connection is truly broken:
+  - refresh token revoked/expired, app disconnected, or terminal auth failure.
+
+### Where Automated Refresh Logic Lives (Implementation Ownership)
+- `app/integrations/quickbooks/client.py`:
+  - keep runtime request-path refresh ownership in `QuickBooksClient` (`_get_connection`, `_refresh`, `request`).
+  - upgrade `_get_connection` to pre-expiry refresh (`now + lead_window`) rather than only post-expiry.
+  - keep 401-triggered refresh+single-retry as safety fallback.
+  - `_refresh` must atomically persist rotated token pair (new access + new refresh token).
+- `app/integrations/quickbooks/auth.py`:
+  - keep OAuth token endpoint integration in `refresh_tokens(...)`.
+  - treat returned `refresh_token` as authoritative on every successful refresh.
+- `app/integrations/quickbooks/service.py`:
+  - expose connection lifecycle/status fields for FE (`expires_at`, `last_refreshed_at`, `last_error_at`, `connection_status`).
+  - do not perform direct token refresh orchestration here; delegate to client/worker paths.
+- Background automation (new):
+  - add scheduled job in worker layer (for example in `app/workers/master.py`) to run periodic keep-alive refresh for active org connections.
+  - cadence recommendation: every 15 minutes scan; refresh only those within lead window or stale since last refresh threshold.
+- Refresh strategy decision:
+  - use hybrid approach (required): proactive scheduler + on-demand refresh during request path.
+  - avoid request-path-only strategy because low-traffic orgs can drift to expired/reconnect-required states unexpectedly.
+- Persistence/locking:
+  - use `QbConnectionRepository.upsert_for_org(...)` with version-aware updates to prevent stale overwrite.
+  - add per-org distributed lock key (for example `qb:refresh_lock:{organization_id}`) to enforce single-flight refresh.
+
+## Failure Handling Model (Detailed)
+
+### Error Classification
+- `TRANSIENT_EXTERNAL`
+  - network timeout, connection reset, QBO 429, QBO 5xx, temporary auth refresh races
+  - action: retry with exponential backoff + jitter
+- `TERMINAL_VALIDATION`
+  - strict mapping missing, invalid entity state, arithmetic mismatch, unsupported business transition
+  - action: mark failed, no auto-retry
+- `TERMINAL_EXTERNAL`
+  - QBO hard validation fault (payload invalid for endpoint), invalid static configuration
+  - action: mark failed, no auto-retry until human/system correction
+- `DEPENDENCY_BLOCKED`
+  - prerequisite mapping/link missing and cannot be built in same job path
+  - action: mark blocked, include dependency details in log payload
+
+### Retry Policy
+- Retry only `TRANSIENT_EXTERNAL`.
+- Backoff strategy: exponential with jitter, capped max delay.
+- Per-org retry cap from `qb_sync_settings`.
+- Maintain attempt number in `qb_sync_logs`.
+- On retry exhaustion:
+  - keep latest failure in logs
+  - expose through `sync-health` and `failures` APIs
+
+### Failure Recording and Traceability
+- Always write `qb_sync_logs` with:
+  - `entity_type`, `local_entity_id`, `action`, `status`, `attempt_no`, `job_id`
+  - `related_qb_id` when available
+  - `event_type` and `desired_operation` (`create`/`update`/`apply`/`noop`)
+  - `error_code` (classified), machine `error_message`, human `error_message_human`
+  - `last_error_at`, `next_retry_at` (where relevant)
+  - concise `payload_summary` + optional redacted `payload_json` (never secrets)
+- Keep `qb_links.sync_status` and `qb_links.last_error` aligned with latest outcome.
+- Preserve existing `pending:*` handling semantics for failed-first sync attempts.
+
+### Recovery
+- Operator-initiated targeted requeue:
+  - `POST /v1/integrations/quickbooks/resync/{entity_type}/{local_entity_id}`
+- Scheduled reconciliation identifies stale failures and orphan links.
+- Recovery playbook:
+  - fix mapping/config/data
+  - run preflight validation API
+  - requeue entity sync
+
+## Edge Case Matrix (Must Handle)
+- Duplicate queue submissions for same entity/version.
+- Entity updated while a prior job is running.
+- Existing `pending:*` link IDs from historical failures.
+- Customer sync succeeds but downstream invoice/credit sync fails.
+- Invoice sync succeeds but credit-application payment fails.
+- Force sync requested on already-synced entities.
+- Payload-equivalent updates (should no-op via fingerprint).
+- QBO duplicate-name conflicts for customer identities.
+- QBO invalid-id or stale SyncToken conflicts.
+- Missing mapping in strict mode.
+- Race between credit-note sync and credit-application sync.
+- Large org bursts causing queue backlog and rate limits.
+- Refresh token rotated by one worker while another worker still holds stale token.
+- Connection drops mid-burst, creating many auth-failed jobs that need safe replay.
+- Reconnect succeeds while retries are still in-flight.
+
+## Reusable Service Architecture (Cross-API)
+
+### Service Contracts
+- `QuickBooksSyncDispatcher`
+  - responsibility: enqueue standardized jobs from any domain API/service
+  - methods:
+    - `enqueue_customer(org_id, customer_id, force=False)`
+    - `enqueue_invoice(org_id, invoice_id, force=False)`
+    - `enqueue_credit_note(org_id, credit_note_id, force=False)`
+    - `enqueue_resync(org_id, entity_type, local_id, force=False)`
+- `QuickBooksSyncOrchestrator`
+  - responsibility: execute one sync unit with validation, mapping, idempotency, logging
+  - methods:
+    - `sync_customer_now(...)`
+    - `sync_invoice_now(...)`
+    - `sync_credit_note_now(...)`
+    - `sync_credit_application_now(...)` (internal loop helper)
+- `QuickBooksValidationService`
+  - responsibility: preflight and execution-time validation gates
+- `QuickBooksMappingResolver`
+  - responsibility: resolve `ItemRef`, `TaxCodeRef`, `SalesTermRef`, dimensions
+- `QuickBooksReconciliationService`
+  - responsibility: compare local intended state vs `qb_links` + logs and surface drift
+
+### Integration Pattern for Other APIs
+- Business modules should not call QuickBooks client directly.
+- They call dispatcher methods after local commit.
+- Dispatcher enforces consistent job IDs and policy checks.
+- This keeps behavior consistent across invoice, credit, admin, and future payment APIs.
+
+## Automatic Trigger Touchpoints (Implementation Checklist)
+- `InvoiceService.create_and_finalize` -> enqueue invoice sync.
+- `InvoiceService.finalize` -> enqueue invoice sync.
+- Invoice update path (when accounting-impacting fields change) -> enqueue invoice sync.
+- Credit-note issue/update workflow -> enqueue credit-note sync.
+- Credit-application create/update workflow -> enqueue invoice sync.
+- Customer profile changes affecting QBO customer payload -> enqueue customer sync.
+- Future payment event creation/update -> enqueue payment sync (deferred).
+
+## In Scope Right Now (Can Be Implemented Safely)
+
+### 1) Models and DB Changes
+- Add `qb_reference_mappings` (single normalized mapping table) in QuickBooks integration models:
+  - `organization_id`, `mapping_type`, `local_key`, `qb_ref_id`, `qb_ref_name`, `is_active`, `metadata`
+  - unique key: `(organization_id, mapping_type, local_key)`
+- Add `qb_sync_settings` (org-level strict controls):
+  - `strict_mapping_mode`, `sync_attachments`, `auto_retry_enabled`, retry policy fields, force behavior flags
+- Extend finance entities for outbound consistency:
+  - `invoices.currency` (3-char ISO)
+  - `invoices.qb_payload_fingerprint`
+  - `credit_notes.qb_payload_fingerprint`
+
+### 2) Service Logic (Current Scope)
+- Enforce strict pre-sync validation (fail closed):
+  - required mappings, arithmetic checks, status checks, currency checks
+- Expand invoice payload to use mapping resolution:
+  - `ItemRef`, `TaxCodeRef`, `SalesTermRef`, optional dimensions (`ClassRef`, `DepartmentRef`, `LocationRef`)
+- Expand credit memo payload similarly with item/tax mapping where data exists.
+- Keep current credit-application posting path (Payment linking invoice + credit memo) with idempotent safety.
+- Add fingerprint-based no-op skip for invoice/credit upserts when payload unchanged.
+- Implement automatic enqueue hooks from invoice/credit/customer operations so sync is continuous.
+
+### 3) Schemas Needed Right Now
+- Add QuickBooks mapping and setting schemas in `app/integrations/quickbooks/schemas.py`:
+  - mapping upsert request/response
+  - mapping list filter schema
+  - sync settings get/update schema
+  - preflight validation response schema
+  - failure/sync-health response schemas
+  - resync request/response schema
+
+### 4) Reconciliation (Current Scope)
+- Add reconciliation for entities currently synced:
+  - customer/invoice/credit-note/credit-application link completeness
+  - failed sync drift and stale failed links
+- Add sync-health reporting for operational monitoring (queue lag, failure counts, retry exhaustion).
+
+## Out of Scope Right Now (Blocked by Missing Payment Event Source)
+- Standalone customer payment posting to QuickBooks.
+- Partial payment event stream sync.
+- Refund/reversal accounting sync.
+- Payment-level reconciliation beyond current credit-application path.
+- Payment idempotency based on true transaction event IDs.
+- Automatic payment-triggered sync for non-credit payment events.
+
+## Why These Are Blocked
+- Without a canonical payment-event source, system cannot reliably determine:
+  - posting sequence and replay identity
+  - partial vs full capture boundaries
+  - refund/reversal linkage
+  - settlement date semantics
+- Using only `payment_status` + `paid_amount` + one `braintree_transaction_id` risks incorrect ledger postings under retries and state transitions.
+
+## APIs: Existing and Proposed
+
+### Existing APIs (already present)
+- `GET /v1/integrations/quickbooks/connect-url`
+- `GET /v1/integrations/quickbooks/callback`
+- `GET /v1/integrations/quickbooks/status`
+- `POST /v1/integrations/quickbooks/disconnect`
+- `POST /v1/integrations/quickbooks/customers/{customer_id}/sync`
+- `POST /v1/integrations/quickbooks/invoices/{invoice_id}/sync`
+- `POST /v1/integrations/quickbooks/credit-notes/{credit_note_id}/sync`
+
+### APIs to Build Now (in-scope)
+- `GET /v1/integrations/quickbooks/mappings`
+  - List mappings by org, type, status
+- `PUT /v1/integrations/quickbooks/mappings/{mapping_type}/{local_key}`
+  - Upsert one mapping record
+- `DELETE /v1/integrations/quickbooks/mappings/{mapping_type}/{local_key}`
+  - Deactivate/remove mapping safely
+- `GET /v1/integrations/quickbooks/settings`
+  - Read org sync settings
+- `PATCH /v1/integrations/quickbooks/settings`
+  - Update strict mode, retry policy, force behavior toggles
+- `POST /v1/integrations/quickbooks/validate/invoices/{invoice_id}`
+  - Preflight validation (mappings + invariants) without syncing
+- `GET /v1/integrations/quickbooks/failures`
+  - Surface recent `qb_sync_logs` with filters (`status`, `entity_type`, `event_type`, `error_code`, time range, `job_id`)
+- `GET /v1/integrations/quickbooks/reconcile`
+  - Return reconciliation summary for current in-scope entities
+- `POST /v1/integrations/quickbooks/resync/{entity_type}/{local_entity_id}`
+  - Operator-triggered safe requeue for failed/stale entities
+- `POST /v1/integrations/quickbooks/resync/bulk`
+  - Replay selected failed/pending records after reconnect (bounded + policy-gated)
+- `GET /v1/integrations/quickbooks/sync-health`
+  - Return queue/sync health summary for operations monitoring
+- `GET /v1/integrations/quickbooks/queue-metrics`
+  - Optional detailed queue metrics per entity type and org
+
+## Admin Connection + Failure Management Module (FE + BE)
+
+### FE Connection Card (required fields)
+- `company_name`, `realm_id`, `connection_status`, `status_created_at`
+- `expires_at`, `last_refreshed_at`, `last_synced_at`
+- `last_error_at`, `last_error_code`, `last_error_message`
+- CTA mapping:
+  - `active` -> Connected
+  - `expiring_soon` -> Connected (refresh pending indicator)
+  - `expired` -> Reconnect
+  - `revoked`/`disconnected` -> Connect
+  - `degraded` -> Connected + warning + view failures
+
+### FE Logs Table and Detail Drawer
+- Table columns:
+  - `created_at`, `entity_type`, `event_type`, `desired_operation`, `status`
+  - `attempt_no`, `job_id`, `related_qb_id`, `error_code`, `error_message_human`
+- Detail drawer:
+  - `payload_summary`, optional redacted `payload_json`
+  - timeline fields: `created_at`, `last_error_at`, `next_retry_at`
+  - replay eligibility + reason
+
+### Alerts (Email to Org Admins)
+- Trigger alerts using the existing notifications system (INTERNAL notifications + EMAIL channel):
+  - When a sync job fails due to a QuickBooks connection/auth error (detected via `_is_connection_failure_log` and `QbSyncLog`).
+  - Alerts are fired in near real time from `QuickBooksService` as soon as a connection-caused failure is logged.
+- Recipients:
+  - Primarily the user who originally connected QuickBooks (`QbConnection.connected_by_id`).
+  - Additional recipients can be configured later via notification templates/preferences (no hard-coded global email).
+- Wiring:
+  - `QuickBooksService` logs FAILED syncs in `QbSyncLog`, then calls a helper that:
+    - Uses `_is_connection_failure_log` to filter connection/auth failures.
+    - Applies a short Redis-based throttle per QuickBooks scope to avoid email spam.
+    - Builds a rich context dict (connection status, realm id, last error, example failed job, impact summary, CTAs).
+    - Calls `notifications.dispatch.notify` with:
+      - `event=NotificationEvent.QB_CONNECTION_BROKEN`
+      - `notification_type=NotificationType.INTERNAL`
+      - `organization_id` set to the SWC-global QuickBooks scope
+      - `user_id` set to `connected_by_id`
+      - `context` set to the rich context dict
+- Rich email content (via hardcoded defaults, overrideable by admins):
+  - Connection block:
+    - `connection_status`, `realm_id`, `connected_at`, `last_refreshed_at`, `last_error_at`, `last_error`.
+  - Failed job block:
+    - `entity_type`, `local_entity_id`, `event_type`, `action`, `job_id`, `attempt_no`, `related_qb_id`, `created_at`, `error_code`, `error_message`.
+  - Impact block:
+    - `recent_failed_count` in last 24h, `last_failure_at`.
+  - Next steps:
+    - Direct link to QuickBooks admin UI (`admin_qb_settings_url`).
+    - Resync guidance (`resync_hint`) to replay only connection-failure jobs after reconnection.
+  - Technical details:
+    - Optional raw error detail for support/debug.
+- Behavior:
+  - Alerts are delivered as INTERNAL notifications with EMAIL + IN_APP enabled by default for `QB_CONNECTION_BROKEN`.
+  - Users can opt out or adjust channels using existing notification preference APIs/UI.
+
+### APIs to Build Later (future, payment dependency)
+- `POST /v1/integrations/quickbooks/invoices/{invoice_id}/payments/sync`
+- `GET /v1/integrations/quickbooks/payments/reconcile`
+- Optional event-targeted resync endpoint once payment-event IDs exist:
+  - `POST /v1/integrations/quickbooks/payments/{payment_event_id}/sync`
+
+## Current vs Future Delivery Map
+
+```mermaid
+flowchart TD
+    localInvoice[LocalInvoiceState] --> qbSyncNow[CurrentScopeSync]
+    localCredit[LocalCreditState] --> qbSyncNow
+    qbMap[QbReferenceMappings] --> qbSyncNow
+    qbSettings[QbSyncSettings] --> qbSyncNow
+    qbSyncNow --> qbEntities[CustomerInvoiceCreditApplication]
+    paymentDependency[PaymentEventModelNotMerged] --> futureSync[FuturePaymentSync]
+    futureSync --> qbPayments[QuickBooksPaymentTransactions]
+```
+
+## Required Files for Current-Scope Implementation
+- `app/integrations/quickbooks/models.py`
+- `app/integrations/quickbooks/repository.py`
+- `app/integrations/quickbooks/service.py`
+- `app/integrations/quickbooks/schemas.py`
+- `app/integrations/quickbooks/routes.py`
+- `app/modules/invoices/models.py`
+- `alembic/versions/<new_revision>.py`
+- `tests/integrations/quickbooks/test_quickbooks_service.py`
+- `tests/integrations/quickbooks/test_quickbooks_tasks.py`
+
+## Acceptance Criteria (Current Scope)
+- Strict mapping mode blocks invalid accounting payloads.
+- Invoice/credit sync uses normalized reference mappings.
+- Credit-application sync remains idempotent and safe under retries.
+- No-op updates are skipped via payload fingerprint.
+- Swagger includes new mapping/settings/validation/reconciliation endpoints.
+- Tests cover success, strict validation failures, retry behavior, and idempotent replay for in-scope entities.
+- Automatic sync triggers enqueue correct jobs after create/update/finalize/credit operations.
+- Worker pipeline remains stable under burst load without duplicate QuickBooks entity creation.
+- Failure classification and retry policy behavior is test-covered and observable.
+- Reusable dispatcher/orchestrator interfaces are used by business modules instead of ad-hoc queue calls.
+- Rotating refresh token flow is test-covered (single-flight refresh + stale-write protection).
+- Status endpoint exposes frontend-required operational fields (`status_created_at`, `last_refreshed_at`, `last_error_at`, etc.).
+- Failure logs are actionable and audit-grade (event type, desired operation, related QB id, human error messages).
+- Admins can reconnect and replay failed/pending syncs safely without engineering intervention.
+
+## Future Trigger Conditions (Before Payment Sync Starts)
+- Upstream payment-event model merged and stable.
+- Canonical payment event identity available for idempotency.
+- Clear event taxonomy for capture/partial/refund/reversal.
+- Reconciliation rules defined for payment postings.
+- Automatic enqueue hooks implemented for payment event creation/update flows.
+
+## Production Hardening Rollout Notes (OAuth/RBAC/Status)
+- OAuth callback state is now treated as strict one-time security context:
+  - persisted with `organization_id`, initiating `user_id`, and explicit `exp` timestamp
+  - callback rejects missing/expired/malformed payloads
+- QuickBooks management access is restricted to `SUPER_ADMIN` and `ADMIN` only.
+- Sync enqueue behavior is policy-based:
+  - duplicate queued work is deduped by default
+  - `force=true` explicitly bypasses dedupe with a force-specific job id path
+- Status response now includes operational fields:
+  - `expires_at`, `connection_status`, `last_synced_at`, `failed_syncs`
+- Suggested operator response:
+  - `connection_status=active`: normal operation
+  - `connection_status=expired`: verify token refresh path and trigger safe retry
+  - `connection_status=revoked`: reconnect required before resync/replay

@@ -1,0 +1,6 @@
+{
+  "reportAttributeAccessIssue": true,
+  "reportGeneralTypeIssues": "warning",
+  "reportOptionalMemberAccess": true,
+  "typeCheckingMode": "standard"
+}

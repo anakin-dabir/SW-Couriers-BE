@@ -1,0 +1,16 @@
+[Unit]
+Description=SW Couriers Arq worker (DEFAULT)
+After=network.target redis-server.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/SW-Couriers-BE
+EnvironmentFile=/var/www/SW-Couriers-BE/.env
+ExecStart=/var/www/SW-Couriers-BE/.venv/bin/arq app.workers.master.DefaultWorkerSettings
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

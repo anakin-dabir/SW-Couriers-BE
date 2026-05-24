@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Usage: ./scripts/test [pytest args...]
+# Examples:
+#   ./scripts/test
+#   ./scripts/test -v
+#   ./scripts/test tests/test_health.py -v
+#   ./scripts/test -k "health"
+
+set -e
+cd "$(dirname "$0")/.."
+poetry run pytest "$@"

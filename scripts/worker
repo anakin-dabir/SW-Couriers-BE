@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Usage: ./scripts/worker [tier]
+#
+# Start Arq worker(s) for the VIP Lane priority queues.
+#
+#   ./scripts/worker              — start all tiers (default for dev)
+#   ./scripts/worker high         — start only the high-priority worker
+#   ./scripts/worker default      — start only the default worker
+#   ./scripts/worker low          — start only the low-priority worker
+#   ./scripts/worker notifications — start only the notifications worker
+#   ./scripts/worker all          — start all tiers
+#
+# In production, run each tier as a separate process/container for isolation:
+#   ./scripts/worker high &
+#   ./scripts/worker default &
+#   ./scripts/worker low &
+#   ./scripts/worker notifications &
+
+set -e
+cd "$(dirname "$0")/.."
+
+TIER="${1:-all}"
+
+start_high()    { poetry run arq app.workers.master.HighWorkerSettings; }
+start_default() { poetry run arq app.workers.master.DefaultWorkerSettings; }
+start_low()     { poetry run arq app.workers.master.LowWorkerSettings; }
+start_notifications() { poetry run arq app.workers.master.NotificationsWorkerSettings; }
+
+case "$TIER" in
+    high)
+        start_high
+        ;;
+    default)
+        start_default
+        ;;
+    low)
+        start_low
+        ;;
+    notifications)
+        start_notifications
+        ;;
+    all)
+        echo "Starting all worker tiers (high, default, low, notifications)..."
+        start_high &
+        start_default &
+        start_low &
+        start_notifications &
+        wait
+        ;;
+    *)
+        echo "Unknown tier: $TIER"
+        echo "Usage: ./scripts/worker [high|default|low|notifications|all]"
+        exit 1
+        ;;
+esac

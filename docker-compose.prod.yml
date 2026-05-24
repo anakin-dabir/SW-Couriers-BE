@@ -1,0 +1,136 @@
+# ─────────────────────────────────────────────────────────────────
+# SW Couriers — Production Stack
+#
+# Ports (isolated from dev and staging stacks):
+#   API      → 8002
+#   Postgres → 5435
+#   Redis    → 6382
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml --env-file .env.local up -d --build
+#   docker compose -f docker-compose.prod.yml --env-file .env.local down
+#   docker compose -f docker-compose.prod.yml --env-file .env.local logs -f api
+# ─────────────────────────────────────────────────────────────────
+
+services:
+  postgres:
+    image: timescale/timescaledb-ha:pg16
+    container_name: swc-prod-postgres
+    restart: unless-stopped
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_USER: swcouriers_staging
+      POSTGRES_PASSWORD: swcouriers_staging_123
+      POSTGRES_DB: swcouriers_staging
+    volumes:
+      - pgdata_prod:/home/postgres/pgdata/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U swcouriers_staging -d swcouriers_staging"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: swc-prod-redis
+    restart: unless-stopped
+    ports:
+      - "6382:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata_prod:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sw-couriers-be:prod
+    container_name: swc-prod-api
+    restart: unless-stopped
+    ports:
+      - "8002:8000"
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql+asyncpg://swcouriers_staging:swcouriers_staging_123@postgres:5432/swcouriers_staging
+      REDIS_URL: redis://redis:6379/0
+    command: ["./scripts/docker-start"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker-high:
+    image: sw-couriers-be:prod
+    container_name: swc-prod-worker-high
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql+asyncpg://swcouriers_staging:swcouriers_staging_123@postgres:5432/swcouriers_staging
+      REDIS_URL: redis://redis:6379/0
+    command: ["./scripts/worker", "high"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  worker-default:
+    image: sw-couriers-be:prod
+    container_name: swc-prod-worker-default
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql+asyncpg://swcouriers_staging:swcouriers_staging_123@postgres:5432/swcouriers_staging
+      REDIS_URL: redis://redis:6379/0
+    command: ["./scripts/worker", "default"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  worker-low:
+    image: sw-couriers-be:prod
+    container_name: swc-prod-worker-low
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql+asyncpg://swcouriers_staging:swcouriers_staging_123@postgres:5432/swcouriers_staging
+      REDIS_URL: redis://redis:6379/0
+    command: ["./scripts/worker", "low"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  worker-notifications:
+    image: sw-couriers-be:prod
+    container_name: swc-prod-worker-notifications
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql+asyncpg://swcouriers_staging:swcouriers_staging_123@postgres:5432/swcouriers_staging
+      REDIS_URL: redis://redis:6379/0
+    command: ["./scripts/worker", "notifications"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata_prod:
+    driver: local
+  redisdata_prod:
+    driver: local

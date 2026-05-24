@@ -1,0 +1,64 @@
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+.env.dev
+.env.docker
+*.pem
+
+# Local-only dev scripts (credentials; not shared in the repo)
+scripts/seed_local_admin_user.py
+scripts/dev/*.py
+scripts/dev/output/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Ruff
+.ruff_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+arc-plan/
+.cursor/
+
+*.md
+!docs/
+!docs/*.md
+
+cursorcontext.md
+
+scripts/seed_dev_organization.py

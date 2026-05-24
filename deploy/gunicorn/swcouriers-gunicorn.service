@@ -1,0 +1,27 @@
+[Unit]
+Description=SW Couriers FastAPI (Gunicorn + Uvicorn)
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/SW-Couriers-BE
+EnvironmentFile=/var/www/SW-Couriers-BE/.env
+ExecStart=/var/www/SW-Couriers-BE/.venv/bin/gunicorn app.main:app \
+  --worker-class uvicorn.workers.UvicornWorker \
+  --bind 127.0.0.1:8000 \
+  --workers 10 \
+  --threads 1 \
+  --timeout 120 \
+  --access-logfile - \
+  --error-logfile - \
+  --capture-output
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

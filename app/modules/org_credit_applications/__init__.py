@@ -1,0 +1,1 @@
+"""Organisation-scoped credit applications."""

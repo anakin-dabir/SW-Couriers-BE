@@ -1,0 +1,5 @@
+"""Client inactivity configuration defaults."""
+
+DEFAULT_INACTIVE_AFTER_DAYS = 60
+MIN_INACTIVE_AFTER_DAYS = 1
+MAX_INACTIVE_AFTER_DAYS = 3650
