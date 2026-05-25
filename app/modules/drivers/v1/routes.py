@@ -21,6 +21,7 @@ from app.common.schemas import MessageResponse, PaginatedResponse, SuccessRespon
 from app.core.rate_limit import DOC_OTP_VERIFY_RATE_LIMIT, DRIVERS_READ_RATE_LIMIT, DRIVERS_WRITE_RATE_LIMIT, limiter
 from app.core.security import generate_secure_password
 from app.modules.auth.service import AuthService
+from app.modules.auth.v1.schemas import SupportIssuePasswordRequest, SupportIssuePasswordResponse
 from app.modules.drivers.enums import (
     CalendarEventSource,
     DriverAccountStatus,
@@ -44,6 +45,7 @@ from app.modules.drivers.v1.docs import (
     GET_DRIVER_ACTIVITY_LOG_DETAIL,
     CREATE_DRIVER_WITH_USER,
     SEND_DRIVER_DOC_OTP,
+    SUPPORT_ISSUE_DRIVER_PASSWORD,
     VERIFY_DRIVER_DOC_OTP,
     DELETE_DRIVER,
     DELETE_DRIVER_DRAFT,
@@ -181,6 +183,7 @@ AuthServiceDep = Annotated[AuthService, Depends(AuthService.dep)]
 DriverReadDep = Annotated[AuthUser, Allowed(resource=Resource.DRIVERS, level=PermissionLevel.READ)]
 DriverWriteDep = Annotated[AuthUser, Allowed(resource=Resource.DRIVERS, level=PermissionLevel.WRITE)]
 
+DriverSupportPasswordDep = Annotated[AuthUser, Allowed(UserRole.ADMIN, UserRole.SUPER_ADMIN, resource=Resource.DRIVERS, level=PermissionLevel.WRITE)]
 
 def _driver_draft_data_dict(driver) -> dict[str, object]:
     """Return `driver_drafts.draft_data` for this driver, or `{}` if there is no pivot row."""
@@ -1535,6 +1538,28 @@ async def resend_driver_credentials(
     await auth_service.issue_driver_activation_email(inviter=user, target_user_id=driver.user_id)
     return ok(message="Activation link resent.")
 
+
+@router.post(
+    "/{user_id}/support-issue-password",
+    response_model=SuccessResponse[SupportIssuePasswordResponse],
+    **SUPPORT_ISSUE_DRIVER_PASSWORD,
+)
+async def support_issue_admin_password(
+    user_id: str,
+    admin: DriverSupportPasswordDep,
+    body: SupportIssuePasswordRequest,
+    auth_service: AuthServiceDep,
+) -> dict:
+    uid, email = await auth_service.support_issue_temporary_password(
+        actor=admin,
+        target_user_id=user_id,
+        new_password=body.new_password,
+        flow="driver",
+    )
+    return ok(
+        data=SupportIssuePasswordResponse(user_id=uid, email=email),
+        message="Password reset. The user was signed out of all sessions.",
+    )
 
 @router.delete(
     "/drafts/{draft_id}",

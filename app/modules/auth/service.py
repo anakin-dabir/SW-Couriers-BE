@@ -1163,6 +1163,26 @@ class AuthService(BaseService):
         )
         logger.info(LogEvent.PASSWORD_CHANGED, user_id=user.id)
 
+    async def _activate_role_specific_profile(self, user: User) -> None:
+        role_val = user.role if isinstance(user.role, str) else user.role.value
+        if role_val == UserRole.DRIVER.value:
+            from app.modules.drivers.service import DriverService
+
+            try:
+                await DriverService(self._session, self._request).activate_driver_on_login(user_id=user.id)
+            except Exception:
+                logger.exception("driver.profile_activation_failed", user_id=user.id)
+
+        elif role_val == UserRole.CUSTOMER_B2B.value:
+            from app.modules.organizations.repository import OrgContactRepository
+
+            try:
+                activated = await OrgContactRepository(self._session).activate_pending_for_user(user.id)
+                if activated > 0:
+                    logger.info("org_contact.activated_via_invite", user_id=user.id, count=activated)
+            except Exception:
+                logger.exception("org_contact.activation_failed", user_id=user.id)
+
     async def _invalidate_all_sessions_for_user(self, user_id: str) -> None:
         await self.user_repo.increment_session_sv(user_id)
         sessions_active = await self.session_repo.list_active_sessions(user_id=user_id)
@@ -1184,7 +1204,7 @@ class AuthService(BaseService):
         actor: AuthUser,
         target_user_id: str,
         new_password: str,
-        flow: Literal["admin_staff", "org_contact"],
+        flow: Literal["admin_staff", "org_contact", "driver"],
         organization_id: str | None = None,
     ) -> tuple[str, str]:
         if target_user_id == actor.id:
@@ -1210,6 +1230,7 @@ class AuthService(BaseService):
                 "status": UserStatus.ACTIVE,
             },
         )
+        await self._activate_role_specific_profile(user)
         await self._invalidate_all_sessions_for_user(user.id)
 
         audit_extra: dict[str, object] = {
@@ -1843,23 +1864,8 @@ class AuthService(BaseService):
         # Role-specific profile activation. Each branch is idempotent — re-running
         # the same invite (which is prevented above) or a missing profile row is a
         # silent no-op rather than an error.
-        if role_val == UserRole.DRIVER.value:
-            from app.modules.drivers.service import DriverService
-
-            try:
-                await DriverService(self._session, self._request).activate_driver_on_login(user_id=invite.user_id)
-            except Exception:
-                logger.exception("driver.profile_activation_failed", user_id=invite.user_id)
-        elif role_val == UserRole.CUSTOMER_B2B.value:
-            from app.modules.organizations.repository import OrgContactRepository
-
-            try:
-                activated = await OrgContactRepository(self._session).activate_pending_for_user(invite.user_id)
-                if activated > 0:
-                    logger.info("org_contact.activated_via_invite", user_id=invite.user_id, count=activated)
-            except Exception:
-                logger.exception("org_contact.activation_failed", user_id=invite.user_id)
-
+        await self._activate_role_specific_profile(user)
+        
         updated_user = await self.user_repo.get_by_id(invite.user_id)
         assert updated_user is not None
         return updated_user

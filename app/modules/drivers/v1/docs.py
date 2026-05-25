@@ -4406,3 +4406,32 @@ SELF_WORK_SCHEDULE_DAY = create_doc_entry(
         "time-off type, holiday name, vehicle registration, and route info."
     ),
 )
+
+
+SUPPORT_ISSUE_DRIVER_PASSWORD = create_doc_entry(
+    "Set support-issued password for a driver account",
+    {
+        200: success_entry(
+            "Password reset",
+            data={"user_id": "00000000-0000-0000-0000-000000000000", "email": "admin@example.com"},
+            message="Password reset. The user was signed out of all sessions.",
+        ),
+        401: error_401_entry("Not authenticated", "AUTHENTICATION_ERROR", "Missing authorization header"),
+        403: error_entry(
+            "Forbidden",
+            code="FORBIDDEN",
+            message="Requires DRIVERS at WRITE level",
+        ),
+        404: error_entry("Admin user not found", code="NOT_FOUND", message="user with id '...' not found"),
+        422: error_entry(
+            "Validation error",
+            code="VALIDATION_ERROR",
+            message="Weak new_password or same as current password",
+        ),
+    },
+    description=(
+        "Support flow: request body supplies ``new_password`` (validated strength). Sets the user's password, "
+        "sets ``force_password_change``, invalidates all sessions, and emails the plaintext password. "
+        "Requires **WRITE** on **DRIVERS** (enforced on the route)."
+    ),
+)
