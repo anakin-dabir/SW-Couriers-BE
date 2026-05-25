@@ -217,6 +217,7 @@ class OrderRepository(BaseRepository):
         created_to_dt_exclusive = datetime.combine(date_to + timedelta(days=1), time.min) if date_to else None
 
         creator_user = aliased(User)
+        customer_user = aliased(User)
 
         filters = []
         if organization_id:
@@ -269,11 +270,17 @@ class OrderRepository(BaseRepository):
             "",
         )
 
+        customer_name_expr = func.nullif(
+            func.trim(func.concat_ws(" ", customer_user.first_name, customer_user.last_name)),
+            "",
+        )
+
         stmt = (
             select(
                 Order.id.label("id"),
                 Order.order_id.label("order_id"),
                 Order.organization_id.label("organization_id"),
+                Order.customer_id.label("customer_id"),
                 Order.pickup_address_id.label("pickup_address_id"),
                 Order.created_by_id.label("created_by_id"),
                 Order.status.label("status"),
@@ -284,6 +291,7 @@ class OrderRepository(BaseRepository):
                 PickupAddress.postcode.label("pickup_postcode"),
                 func.concat_ws(" ", creator_user.first_name, creator_user.last_name).label("created_by_name"),
                 client_name_expr.label("client_name"),
+                customer_name_expr.label("customer_name"),
                 Organization.reference.label("client_reference"),
                 func.coalesce(package_counts_sq.c.package_count, 0).label("package_count"),
                 func.coalesce(stop_counts_sq.c.delivery_stop_count, 0).label("delivery_stop_count"),
@@ -291,6 +299,7 @@ class OrderRepository(BaseRepository):
             .outerjoin(PickupAddress, PickupAddress.id == Order.pickup_address_id)
             .outerjoin(creator_user, creator_user.id == Order.created_by_id)
             .outerjoin(Organization, Organization.id == Order.organization_id)
+            .outerjoin(customer_user, customer_user.id == Order.customer_id)
             .outerjoin(stop_counts_sq, stop_counts_sq.c.order_id == Order.id)
             .outerjoin(package_counts_sq, package_counts_sq.c.order_id == Order.id)
         )

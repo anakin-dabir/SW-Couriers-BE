@@ -3,6 +3,11 @@
 Revision ID: 0142_quickbooks_global_singleton
 Revises: 0141_staff_time_off
 Create Date: 2026-05-19
+
+NOTE: Applied in production — do not change upgrade()/downgrade() SQL. Fresh installs
+and downgrade paths must stay aligned with what already ran. The f-string UPDATEs below
+use a hardcoded module constant only (not exploitable); do not copy that pattern for
+dynamic values — use ``alembic.sql_helpers`` (bindparams) in new migrations instead.
 """
 
 from __future__ import annotations

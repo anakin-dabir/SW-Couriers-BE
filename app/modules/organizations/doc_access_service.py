@@ -148,7 +148,7 @@ class DocAccessService:
             expires_at=expires_at,
             access_scope=access_scope,
         )
-        await self.session.commit()
+        await self.session.flush()
 
         await enqueue(
             Job.SEND_DOC_OTP_EMAIL,
@@ -195,7 +195,7 @@ class DocAccessService:
             expires_at=expires_at,
             access_scope=access_scope,
         )
-        await self.session.commit()
+        await self.session.flush()
 
         return {
             "doc_access_token": raw_token,
@@ -325,7 +325,7 @@ class ShareOtpService:
             otp_code=otp_code,
             expires_at=expires_at,
         )
-        await self.session.commit()
+        await self.session.flush()
 
         await enqueue(
             Job.SEND_SHARE_OTP_EMAIL,
@@ -363,7 +363,7 @@ class ShareOtpService:
             raw_token=raw_token,
             expires_at=expires_at,
         )
-        await self.session.commit()
+        await self.session.flush()
 
         return {
             "share_access_token": raw_token,

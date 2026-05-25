@@ -4,6 +4,8 @@ Revision ID: ${up_revision}
 Revises: ${down_revision | comma,n}
 Create Date: ${create_date}
 
+For data migrations with dynamic values use ``alembic.sql_helpers.execute_bound`` /
+``update_uuid_column`` — never f-string SQL values. Do not edit applied revisions.
 """
 from typing import Sequence, Union
 

@@ -139,4 +139,5 @@ markers = [
     "unit: fast pure-logic tests (no DB)",
     "integration: DB/ASGI/API tests (default driver suite)",
     "driver_activation: public driver deep-link flow (POST /v1/auth/driver-activation/*, X-Invite-Token)",
+    "smoke: runtime dependency smoke tests (WeasyPrint/GTK); run in CI with system libs installed",
 ]

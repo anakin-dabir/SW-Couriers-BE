@@ -10,7 +10,7 @@ from app.common.enums import UserRole
 from app.common.response import ok
 from app.common.schemas import PaginatedResponse, SuccessResponse, quantize_currency
 from app.core.swagger.utils import schema_description
-from app.modules.orders.enums import MAX_RETURN_EVIDENCE_IMAGES
+from app.modules.orders.enums import MAX_RETURN_EVIDENCE_IMAGES, ClientTypeEnum
 from app.modules.orders.service import OrderService
 from app.modules.orders.v1.docs import (
     FAILED_DELIVERIES_LIST,
@@ -191,18 +191,30 @@ async def list_orders(
         )
         postcode_raw = row.get("pickup_postcode")
         pickup_postcode = (str(postcode_raw).strip() if postcode_raw is not None else "") or None
-        client_name_raw = row.get("client_name")
-        client_name = client_name_raw.strip() if isinstance(client_name_raw, str) else None
-        client_reference_raw = row.get("client_reference")
-        client_reference = (
-            client_reference_raw.strip() if isinstance(client_reference_raw, str) else None
-        ) or None
-        client = OrderClientEntry(
-            id=row["organization_id"],
-            name=client_name or None,
-            reference=client_reference,
-            type="B2B",
-        )
+        customer_id = row.get("customer_id")
+        if customer_id:
+            customer_name_raw = row.get("customer_name")
+            customer_name = (customer_name_raw.strip() if isinstance(customer_name_raw, str) else None) or None
+            client = OrderClientEntry(
+                id=customer_id,
+                name=customer_name,
+                reference=None,
+                type=ClientTypeEnum.B2C
+            )
+        else:
+
+            client_name_raw = row.get("client_name")
+            client_name = client_name_raw.strip() if isinstance(client_name_raw, str) else None
+            client_reference_raw = row.get("client_reference")
+            client_reference = (
+                client_reference_raw.strip() if isinstance(client_reference_raw, str) else None
+            ) or None
+            client = OrderClientEntry(
+                id=row["organization_id"],
+                name=client_name or None,
+                reference=client_reference,
+                type=ClientTypeEnum.B2B,
+            )
         items.append(
             OrderListItem(
                 id=row["id"],

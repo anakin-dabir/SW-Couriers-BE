@@ -148,7 +148,7 @@ class ClientInactivityService(BaseService):
             )
 
         if commit:
-            await self._session.commit()
+            await self._session.flush()
 
         logger.info(
             LogEvent.CLIENT_INACTIVITY_CRON_COMPLETED,

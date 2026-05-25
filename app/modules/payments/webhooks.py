@@ -4,6 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 import structlog
 from braintree.exceptions.invalid_signature_error import InvalidSignatureError
 from braintree.webhook_notification import WebhookNotification
@@ -55,6 +56,7 @@ _DISPUTE_LOSS_KINDS = frozenset(
         WebhookNotification.Kind.DisputeAutoAccepted,
     }
 )
+
 
 def _safe_json_value(value: Any) -> Any:
     if value is None:
@@ -160,14 +162,26 @@ async def braintree_webhook(
             return ok({"kind": kind, "handled": False, "reason": "missing_dispute_payload"})
 
         dispute_id = str(event_payload["dispute_id"])
-        await event_repo.create(
-            {
-                "webhook_kind": kind,
-                "braintree_transaction_id": event_payload.get("braintree_transaction_id"),
-                "dispute_id": dispute_id,
-                "payload_json": event_payload,
-            }
-        )
+
+        # Idempotency guard
+        if await event_repo.exists(dispute_id=dispute_id, webhook_kind=kind):
+            logger.info("payments.braintree_webhook.dispute_duplicate", dispute_id=dispute_id, webhook_kind=kind)
+            return ok({"kind": kind, "handled": True, "dispute_id": dispute_id, "idempotent": True})
+
+        try:
+            async with session.begin_nested():
+                await event_repo.create(
+                    {
+                        "webhook_kind": kind,
+                        "braintree_transaction_id": event_payload.get("braintree_transaction_id"),
+                        "dispute_id": dispute_id,
+                        "payload_json": event_payload,
+                    }
+                )
+        except IntegrityError:
+            logger.info("payments.braintree_webhook.dispute_duplicate_race", webhook_kind=kind, dispute_id=dispute_id)
+            return ok({"kind": kind, "handled": True, "dispute_id": dispute_id, "idempotent": True})
+
         payment_id = str(event_payload.get("order_id") or "").strip() or None
         tx_id = str(event_payload.get("braintree_transaction_id") or "").strip() or None
         dispute_status = str(event_payload.get("status") or "").strip() or None
@@ -219,13 +233,25 @@ async def braintree_webhook(
 
     if kind in _TRANSACTION_SETTLEMENT_KINDS:
         tx_payload = _extract_transaction_summary(notification, kind=kind) or {"webhook_kind": kind}
-        await event_repo.create(
-            {
-                "webhook_kind": kind,
-                "braintree_transaction_id": tx_payload.get("braintree_transaction_id"),
-                "payload_json": tx_payload,
-            }
-        )
+        tx_id_for_dedup = str(tx_payload.get("braintree_transaction_id") or "").strip() or None
+
+        if tx_id_for_dedup and await event_repo.exists(braintree_transaction_id=tx_id_for_dedup, webhook_kind=kind):
+            logger.info("payments.braintree_webhook.transaction_duplicate", braintree_transaction_id=tx_id_for_dedup, webhook_kind=kind)
+            return ok({"kind": kind, "handled": True, "braintree_transaction_id": tx_id_for_dedup})
+
+        try:
+            async with session.begin_nested():
+                await event_repo.create(
+                {
+                    "webhook_kind": kind,
+                    "braintree_transaction_id": tx_payload.get("braintree_transaction_id"),
+                    "payload_json": tx_payload,
+                }
+            )
+        except IntegrityError:
+            logger.info("payments.braintree_webhook.transaction_duplicate_race", webhook_kind=kind, braintree_transaction_id=tx_id_for_dedup)
+            return ok({"kind": kind, "handled": True, "braintree_transaction_id": tx_id_for_dedup})
+
         tx_id = str(tx_payload.get("braintree_transaction_id") or "").strip() or None
         payment_id = str(tx_payload.get("order_id") or "").strip() or None
         tx_status = str(tx_payload.get("status") or "").strip() or None

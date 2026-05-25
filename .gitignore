@@ -41,6 +41,9 @@ htmlcov/
 .tox/
 .nox/
 
+# assign_today_* script manifests (repo root)
+driver_assign_*_manifest.json
+
 # Ruff
 .ruff_cache/
 
@@ -62,3 +65,6 @@ arc-plan/
 cursorcontext.md
 
 scripts/seed_dev_organization.py
+.claude
+.codex
+.cursor

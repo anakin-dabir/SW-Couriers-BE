@@ -1,6 +1,7 @@
 FROM python:3.12-slim
 
 # libmagic for python-magic; WeasyPrint runtime libs for invoice/statement PDF generation
+# (keep in sync with .github/workflows/ci.yml → tests/smoke/test_weasyprint_pdf_smoke.py)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libmagic1 \
     curl \

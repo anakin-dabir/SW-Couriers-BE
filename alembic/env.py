@@ -1,6 +1,10 @@
 """Alembic migration environment. Uses asyncpg via async engine; discovers models via Base.metadata.
 
 IMPORTANT: Every new model module must be imported here for autogenerate to detect it.
+
+Migration policy:
+- Never edit revisions already applied to production/staging; add a new revision instead.
+- For data migrations with dynamic values, use ``alembic.sql_helpers`` (bindparams), not f-strings.
 """
 
 import asyncio

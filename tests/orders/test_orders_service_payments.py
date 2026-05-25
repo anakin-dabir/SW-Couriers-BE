@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from decimal import Decimal
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.exceptions import ValidationError
 from app.modules.invoices.enums import InvoiceStatus
+from app.modules.orders.service import OrderService
+from app.modules.orders.models import Order
+from app.modules.invoices.models import Invoice
 from app.modules.orders.service import OrderService
 
 
@@ -15,7 +20,7 @@ from app.modules.orders.service import OrderService
 async def test_record_card_billing_for_order_marks_deposited_and_allocates_when_invoice_sent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    session = SimpleNamespace(flush=AsyncMock())
+    session = cast(AsyncSession, SimpleNamespace(flush=AsyncMock()))
     service = OrderService(session=session, request=None)
 
     mark_mock = AsyncMock(return_value=SimpleNamespace(id="pay-1"))
@@ -28,12 +33,12 @@ async def test_record_card_billing_for_order_marks_deposited_and_allocates_when_
 
     monkeypatch.setattr("app.modules.orders.service.BillingService", _FakeBilling)
 
-    order = SimpleNamespace(
+    order = cast(Order, SimpleNamespace(
         id="order-1",
         order_id="SWC-ORD-000001",
         total_amount=Decimal("50.00"),
-    )
-    invoice = SimpleNamespace(id="inv-1", status=InvoiceStatus.SENT.value)
+    ))
+    invoice = cast(Invoice, SimpleNamespace(id="inv-1", status=InvoiceStatus.SENT.value))
 
     await service._record_card_billing_for_order(
         order=order,
@@ -64,7 +69,7 @@ async def test_record_card_billing_for_order_marks_deposited_and_allocates_when_
 async def test_record_card_billing_for_order_finalizes_draft_invoice_before_allocation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    session = SimpleNamespace(flush=AsyncMock())
+    session = cast(AsyncSession, SimpleNamespace(flush=AsyncMock()))
     service = OrderService(session=session, request=None)
 
     mark_mock = AsyncMock(return_value=SimpleNamespace(id="pay-draft"))
@@ -81,12 +86,12 @@ async def test_record_card_billing_for_order_finalizes_draft_invoice_before_allo
     monkeypatch.setattr("app.modules.orders.service.BillingService", _FakeBilling)
     monkeypatch.setattr("app.modules.orders.service.InvoiceService.finalize", finalize_mock)
 
-    order = SimpleNamespace(
+    order = cast(Order, SimpleNamespace(
         id="order-draft-pay",
         order_id="SWC-ORD-DRAFT",
         total_amount=Decimal("10.00"),
-    )
-    draft_inv = SimpleNamespace(id="inv-draft", status=InvoiceStatus.DRAFT.value)
+    ))
+    draft_inv = cast(Invoice, SimpleNamespace(id="inv-draft", status=InvoiceStatus.DRAFT.value))
 
     await service._record_card_billing_for_order(
         order=order,
@@ -108,7 +113,7 @@ async def test_record_card_billing_for_order_finalizes_draft_invoice_before_allo
 
 @pytest.mark.asyncio
 async def test_precharge_saved_card_for_order_raises_when_charge_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    session = SimpleNamespace(flush=AsyncMock())
+    session = cast(AsyncSession, SimpleNamespace(flush=AsyncMock()))
     service = OrderService(session=session, request=None)
 
     charge_mock = AsyncMock(

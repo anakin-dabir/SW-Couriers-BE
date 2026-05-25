@@ -62,15 +62,17 @@ class StatusAutomationRuleSetRepository(BaseRepository):
         )
         count_stmt = select(func.count()).select_from(StatusAutomationRuleSet)
 
+        # Optional scope filters: omit scope_org_id for admin cross-tenant listing.
+        # Never pass None into _apply_where — the base repo raises on None (RBAC safety).
         if scope_type is not None:
-            stmt = stmt.where(StatusAutomationRuleSet.scope_type == scope_type)
-            count_stmt = count_stmt.where(StatusAutomationRuleSet.scope_type == scope_type)
+            stmt = self._apply_where(stmt, scope_type=scope_type)
+            count_stmt = self._apply_where(count_stmt, scope_type=scope_type)
         if scope_org_id is not None:
-            stmt = stmt.where(StatusAutomationRuleSet.scope_org_id == scope_org_id)
-            count_stmt = count_stmt.where(StatusAutomationRuleSet.scope_org_id == scope_org_id)
+            stmt = self._apply_where(stmt, scope_org_id=scope_org_id)
+            count_stmt = self._apply_where(count_stmt, scope_org_id=scope_org_id)
         if status is not None:
-            stmt = stmt.where(StatusAutomationRuleSet.status == status)
-            count_stmt = count_stmt.where(StatusAutomationRuleSet.status == status)
+            stmt = self._apply_where(stmt, status=status)
+            count_stmt = self._apply_where(count_stmt, status=status)
         if q:
             q_clause = StatusAutomationRuleSet.name.ilike(f"%{q.strip()}%")
             stmt = stmt.where(q_clause)
@@ -106,13 +108,12 @@ class StatusAutomationRuleSetRepository(BaseRepository):
         return list(rows), total
 
     async def find_active_customised_by_parent(self, *, organization_id: str, parent_global_rule_set_id: str) -> StatusAutomationRuleSet | None:
-        stmt = select(StatusAutomationRuleSet).where(
-            StatusAutomationRuleSet.scope_type == StatusAutomationScopeType.ORG.value,
-            StatusAutomationRuleSet.scope_org_id == organization_id,
-            StatusAutomationRuleSet.parent_global_rule_set_id == parent_global_rule_set_id,
-            StatusAutomationRuleSet.status == "ACTIVE",
+        return await self.find_one(
+            scope_type=StatusAutomationScopeType.ORG.value,
+            scope_org_id=organization_id,
+            parent_global_rule_set_id=parent_global_rule_set_id,
+            status="ACTIVE",
         )
-        return (await self.session.execute(stmt)).scalar_one_or_none()
 
 
 def exists_trigger_entity(entity_type: str):

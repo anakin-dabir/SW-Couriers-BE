@@ -340,7 +340,7 @@ class SuspensionRulesService(BaseService):
             category=AuditCategory.SECURITY,
             event_type=AuditEventType.CREDIT_TERMS_MODIFIED,
         )
-        await self._session.commit()
+        await self._session.flush()
         return await self._rule_set_repo.get_by_id_with_conditions_or_404(str(rule.id))
 
     async def update_rule_set(
@@ -375,7 +375,7 @@ class SuspensionRulesService(BaseService):
             category=AuditCategory.SECURITY,
             event_type=AuditEventType.CREDIT_TERMS_MODIFIED,
         )
-        await self._session.commit()
+        await self._session.flush()
         return await self._rule_set_repo.get_by_id_with_conditions_or_404(rule_set_id)
 
     async def create_customised_rule_from_global(
@@ -504,7 +504,7 @@ class SuspensionRulesService(BaseService):
             event_type=AuditEventType.CREDIT_TERMS_MODIFIED,
         )
         await self._rule_set_repo.hard_delete(rule_set_id)
-        await self._session.commit()
+        await self._session.flush()
         return parent
 
     async def list_org_global_suppressions(self, organization_id: str) -> list[str]:
@@ -545,7 +545,7 @@ class SuspensionRulesService(BaseService):
             category=AuditCategory.SECURITY,
             event_type=AuditEventType.CREDIT_TERMS_MODIFIED,
         )
-        await self._session.commit()
+        await self._session.flush()
 
     async def upsert_org_rule_override(
         self,
@@ -715,7 +715,7 @@ class SuspensionRulesService(BaseService):
             event_type=AuditEventType.CREDIT_TERMS_MODIFIED,
         )
         await self._rule_set_repo.hard_delete(rule_set_id)
-        await self._session.commit()
+        await self._session.flush()
 
     async def delete_org_rule_override(
         self,
@@ -881,17 +881,12 @@ class SuspensionRulesService(BaseService):
             run.warned_count = warned
             run.suspended_count = suspended
             run.failed_count = failed
-            if commit:
-                await self._session.commit()
-            else:
-                await self._session.flush()
+            await self._session.flush()
         except Exception:
             run.status = "FAILED"
             run.completed_at = datetime.utcnow()
             run.failed_count = (run.failed_count or 0) + 1
             await self._session.flush()
-            if commit:
-                await self._session.commit()
             raise
 
     async def create_payment_risk_event(
@@ -916,7 +911,7 @@ class SuspensionRulesService(BaseService):
                 "rule_metadata": metadata or {},
             }
         )
-        await self._session.commit()
+        await self._session.flush()
         return event
 
     async def _active_org_ids(self) -> list[str]:
@@ -1300,10 +1295,7 @@ class SuspensionRulesService(BaseService):
             await self._session.flush()
             await self._queue_notifications(activity=activity, users=users, decision=decision)
 
-        if commit:
-            await self._session.commit()
-        else:
-            await self._session.flush()
+        await self._session.flush()
         return outcome
 
     async def _queue_notifications(self, *, activity: SuspensionActivity, users: list[User], decision: RuleDecision) -> None:

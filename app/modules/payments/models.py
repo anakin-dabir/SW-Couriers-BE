@@ -10,7 +10,8 @@ model configuration).
 
 from decimal import Decimal
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, Numeric, String, UniqueConstraint, text, Index
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -102,6 +103,11 @@ class BraintreeFeeProfile(BaseModelNoVersion):
 class BraintreeWebhookEvent(AppendOnlyModel):
     __tablename__ = "braintree_webhook_events"
 
+    __table_args__ = (
+        Index("uq_braintree_webhook_dispute_kind", "dispute_id", "webhook_kind", unique=True, postgresql_where=text("dispute_id IS NOT NULL")),
+        Index("uq_braintree_webhook_txn_kind", "braintree_transaction_id", "webhook_kind", unique=True, postgresql_where=text("braintree_transaction_id IS NOT NULL")),
+    )
+    
     webhook_kind: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
     braintree_transaction_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     dispute_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)

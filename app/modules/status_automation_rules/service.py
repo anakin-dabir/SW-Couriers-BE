@@ -163,7 +163,7 @@ class StatusAutomationRulesService(BaseService):
         await self._trigger_repo.replace_for_rule_set(created.id, trigger)
         await self._condition_repo.replace_for_rule_set(created.id, conditions)
         await self._action_repo.replace_for_rule_set(created.id, actions)
-        await self._session.commit()
+        await self._session.flush()
         return await self._rule_repo.get_by_id_with_children_or_404(created.id)
 
     async def update_rule_set(
@@ -193,16 +193,16 @@ class StatusAutomationRulesService(BaseService):
             await self._condition_repo.replace_for_rule_set(rule_set_id, conditions)
         if actions is not None:
             await self._action_repo.replace_for_rule_set(rule_set_id, actions)
-        await self._session.commit()
+        await self._session.flush()
         return await self._rule_repo.get_by_id_with_children_or_404(rule_set_id)
 
     async def delete_rule_set(self, *, rule_set_id: str) -> None:
         await self._rule_repo.hard_delete(rule_set_id)
-        await self._session.commit()
+        await self._session.flush()
 
     async def set_rule_status(self, *, rule_set_id: str, status: StatusAutomationRuleStatus, expected_version: int | None) -> StatusAutomationRuleSet:
         await self._rule_repo.update_by_id(rule_set_id, {"status": status.value}, expected_version=expected_version)
-        await self._session.commit()
+        await self._session.flush()
         return await self._rule_repo.get_by_id_with_children_or_404(rule_set_id)
 
     async def create_customised_from_global(
@@ -264,7 +264,7 @@ class StatusAutomationRulesService(BaseService):
         if parent.scope_type != StatusAutomationScopeType.GLOBAL.value:
             raise ValidationError("Linked parent default rule is invalid.")
         await self._rule_repo.hard_delete(rule_set_id)
-        await self._session.commit()
+        await self._session.flush()
         return parent
 
     async def get_applicable_for_org(self, *, org_id: str, include_inactive: bool = True) -> list[dict[str, Any]]:
@@ -560,7 +560,7 @@ class StatusAutomationRulesService(BaseService):
                     )
                     raise
             if commit:
-                await self._session.commit()
+                await self._session.flush()
         finally:
             await self._release_entity_lock(lock_acquired, lock_key)
 
@@ -704,7 +704,7 @@ class StatusAutomationRulesService(BaseService):
             total_executed += metrics["executed"]
 
         if commit:
-            await self._session.commit()
+            await self._session.flush()
         logger.info(
             "STATUS_AUTOMATION_RECONCILIATION_SUMMARY",
             run_date=run_date.isoformat(),

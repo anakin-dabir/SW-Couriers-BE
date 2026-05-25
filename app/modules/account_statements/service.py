@@ -493,7 +493,7 @@ class AccountStatementService(BaseService):
             if not batch:
                 break
             await self._execute_schedule_run(batch[0], now_utc=ref)
-            await self._session.commit()
+            await self._session.flush()
             processed += 1
         return processed
 
