@@ -232,12 +232,6 @@ class VehicleDefect(BaseModel):
         nullable=True,
     )
     reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    defect_type: Mapped[VehicleType] = mapped_column(
-        Enum(VehicleType, native_enum=False),
-        nullable=False,
-        default=VehicleType.INTERNAL,
-        server_default=VehicleType.INTERNAL,
-    )
     category: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
@@ -420,3 +414,4 @@ class VehicleScheduleEntry(BaseModelNoVersion):
     )
     source_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    

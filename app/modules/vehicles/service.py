@@ -2323,7 +2323,7 @@ class VehicleService(BaseService):
         patch = data.model_dump(exclude_unset=True)
         if "reported_by_id" in patch and patch["reported_by_id"] is not None:
             patch["reported_by_id"] = str(patch["reported_by_id"])
-        for enum_key in ("status", "defect_type", "category", "severity"):
+        for enum_key in ("status", "category", "severity"):
             if enum_key in patch and hasattr(patch[enum_key], "value"):
                 patch[enum_key] = patch[enum_key].value
 

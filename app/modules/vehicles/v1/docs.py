@@ -755,7 +755,7 @@ UPDATE_DEFECT = create_doc_entry(
         422: error_entry("Validation error", code="VALIDATION_ERROR", message="At least one field must be provided"),
     },
     description=(
-        "Partial JSON update: status, allowed_to_drive, defect_type, category, severity, description, route_id, "
+        "Partial JSON update: status, allowed_to_drive, category, severity, description, route_id, "
         "reported_by_id, reported_at (not in the future). At least one field required."
     ),
 )

@@ -635,7 +635,6 @@ class TestReportDefect:
         headers = {**admin_headers(vehicle_admin), **idem_headers()}
         payload = {
             "reported_at": datetime.now(UTC).isoformat(),
-            "defect_type": "INTERNAL",
             "category": "TYRES",
             "severity": "MINOR",
             "description": "Test defect",
@@ -694,7 +693,6 @@ class TestListDefects:
         headers = {**admin_headers(vehicle_admin), **idem_headers()}
         payload = {
             "reported_at": datetime.now(UTC).isoformat(),
-            "defect_type": "INTERNAL",
             "category": "TYRES",
             "severity": "MINOR",
             "description": "ReporterSearchToken defect description",
@@ -746,7 +744,6 @@ class TestUpdateAndDeleteDefect:
         headers = {**admin_headers(vehicle_admin), **idem_headers()}
         report = {
             "reported_at": datetime.now(UTC).isoformat(),
-            "defect_type": "INTERNAL",
             "category": "TYRES",
             "severity": "MINOR",
             "description": "Defect to update",
@@ -774,7 +771,6 @@ class TestUpdateAndDeleteDefect:
         headers = {**admin_headers(vehicle_admin), **idem_headers()}
         report = {
             "reported_at": datetime.now(UTC).isoformat(),
-            "defect_type": "INTERNAL",
             "category": "TYRES",
             "severity": "MINOR",
             "description": "Original text",
@@ -803,7 +799,6 @@ class TestUpdateAndDeleteDefect:
         headers = {**admin_headers(vehicle_admin), **idem_headers()}
         report = {
             "reported_at": datetime.now(UTC).isoformat(),
-            "defect_type": "INTERNAL",
             "category": "TYRES",
             "severity": "MINOR",
             "description": "To delete",

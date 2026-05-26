@@ -788,7 +788,6 @@ class VehicleRouteStopDetailResponse(BaseSchema):
 
 class ReportDefectRequest(BaseSchema):
     reported_at: datetime
-    defect_type: VehicleType
     category: str
     severity: DefectSeverity
     description: str = Field(min_length=1, max_length=5000)
@@ -810,7 +809,6 @@ class ReportDefectRequest(BaseSchema):
 class UpdateDefectRequest(BaseSchema):
     status: DefectStatus | None = None
     allowed_to_drive: bool | None = None
-    defect_type: VehicleType | None = None
     category: str | None = None
     severity: DefectSeverity | None = None
     description: str | None = Field(default=None, min_length=1, max_length=5000)
@@ -841,7 +839,6 @@ class DefectResponse(BaseResponseSchema):
     route_id: str | None = None
     reported_by: UserSchema | None = None
     reported_at: datetime
-    defect_type: VehicleType
     category: str
     severity: DefectSeverity
     status: DefectStatus

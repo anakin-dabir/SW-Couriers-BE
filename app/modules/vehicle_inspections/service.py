@@ -28,7 +28,7 @@ from app.modules.vehicle_inspections.v1.schemas import (
     InspectionVehicleSummary,
     ReportInspectionDefectRequest,
 )
-from app.modules.vehicles.enums import DefectStatus, VehicleType
+from app.modules.vehicles.enums import DefectStatus
 from app.modules.vehicles.models import Vehicle, VehicleDefect, VehicleDefectImage
 from app.storage.upload import generate_image_url, upload_to_r2
 
@@ -149,7 +149,6 @@ class InspectionService(BaseService):
             inspection_id=inspection.id,
             reported_by_id=ctx.user_id,
             reported_at=datetime.now(UTC),
-            defect_type=VehicleType.INTERNAL,
             category=data.category,
             severity=data.severity,
             status=DefectStatus.PENDING,
