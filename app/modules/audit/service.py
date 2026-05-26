@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.enums import LogEvent
 from app.modules.audit.enums import AuditCategory, AuditEventType
 from app.modules.audit.models import AuditLog
+from app.modules.user.models import User
 
 logger = structlog.get_logger()
 
@@ -106,6 +107,9 @@ class AuditService:
             # Simple Environment Parsing
             browser, device, os = self._parse_ua(user_agent)
 
+            if user_role is None and user_id is not None:
+                user_role = await self._resolve_user_role(user_id)
+
             entry = AuditLog(
                 action=action,
                 entity_type=entity_type,
@@ -159,6 +163,14 @@ class AuditService:
         await self.session.execute(
             select(func.pg_advisory_xact_lock(func.hashtext(organization_id)))
         )
+
+    async def _resolve_user_role(self, user_id: str) -> str | None: 
+        result = await self.session.execute(select(User.role).where(User.id == user_id))
+        raw = result.scalar_one_or_none()
+        if raw is None:
+            return None
+
+        return raw.value if hasattr(raw, "value") else str(raw)
 
     async def _latest_hash_for_org(self, organization_id: str | None) -> str | None:
         """Return the integrity_hash of the most recent row in this organization's chain, if any."""

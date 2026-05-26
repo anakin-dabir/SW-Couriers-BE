@@ -16,13 +16,18 @@ _SENSITIVE_KEY_RE = re.compile(
 )
 
 
-def activity_user_type_badge(*, user_role: str | None, user_id: str | None) -> str:
+def activity_user_type_badge(*, user_role: str | None, user_id: str | None, user: User | None) -> str:
     """Short label for the activity table User Type column."""
     if not user_id:
         return "System"
-    if not user_role:
-        return "User"
-    role = user_role.upper()
+    resolved_role = user_role
+    if not resolved_role and user is not None:
+        raw = getattr(user, "role", None)
+        if raw is not None:
+            resolved_role = raw.value if hasattr(raw, "value") else str(raw)
+    if not resolved_role:
+        return "System"
+    role = resolved_role.upper()
     if role == "DRIVER":
         return "Driver"
     if role in ("ADMIN", "SUPER_ADMIN"):

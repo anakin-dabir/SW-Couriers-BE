@@ -1721,7 +1721,7 @@ def _driver_activity_list_item(log) -> DriverActivityLogListItem:
         id=log.id,
         timestamp=log.created_at,
         event=activity_event_label(log),
-        user_type=activity_user_type_badge(user_role=log.user_role, user_id=log.user_id),
+        user_type=activity_user_type_badge(user_role=log.user_role, user_id=log.user_id, user=user),
         activity_performed_by=actor_email(log, user),
         ip_address=log.ip_address,
     )
@@ -1839,7 +1839,7 @@ async def get_driver_activity_log_detail(
         id=log.id,
         timestamp=log.created_at,
         event=activity_event_label(log),
-        user_type=activity_user_type_badge(user_role=log.user_role, user_id=log.user_id),
+        user_type=activity_user_type_badge(user_role=log.user_role, user_id=log.user_id, user=user),
         activity_performed_by=actor_email(log, user),
         ip_address=log.ip_address,
         audit_ref=log.audit_ref,
