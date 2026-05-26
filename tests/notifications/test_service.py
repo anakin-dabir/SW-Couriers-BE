@@ -80,6 +80,26 @@ class TestWorkerResolveDriver:
         assert NotificationChannel.PUSH in channels
         assert NotificationChannel.IN_APP in channels
 
+    @pytest.mark.asyncio
+    async def test_work_schedule_updated_resolves_push_and_inapp(
+        self, db_session: AsyncSession
+    ) -> None:
+        resolved = await _service(db_session).resolve_notification(
+            event=NotificationEvent.DRIVER_WORK_SCHEDULE_UPDATED,
+            notification_type=NotificationType.DRIVER,
+            organization_id="00000000-0000-0000-0000-000000000001",
+            user_id=None,
+            context={
+                "driver_name": "Test Driver",
+                "change_summary": "Your weekly work schedule was updated",
+                "effective_from": "",
+                "updated_at": "2026-05-25T12:00:00+00:00",
+            },
+        )
+        channels = [r.channel for r in resolved]
+        assert NotificationChannel.PUSH in channels
+        assert NotificationChannel.IN_APP in channels
+
 
 class TestWorkerResolveB2BCustomer:
     @pytest.mark.asyncio

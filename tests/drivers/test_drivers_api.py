@@ -1110,13 +1110,13 @@ class TestShiftsAndViolations:
         )
         driver_id = create_resp.json()["data"]["driver"]["id"]
 
-        today = date.today()
+        shift_date = date.today() + timedelta(days=90)
         resp = await client.post(
             f"{DRIVERS}/shifts",
             headers=headers,
             data={
                 "driver_id": driver_id,
-                "date": str(today),
+                "date": str(shift_date),
                 "start_time": "08:00:00",
                 "end_time": "16:00:00",
             },

@@ -136,6 +136,7 @@ class NotificationEvent(enum.StrEnum):
     RECIPIENT_CANCELLED = "RECIPIENT_CANCELLED"
 
     DRIVER_VEHICLE_SERVICE_DUE = "DRIVER_VEHICLE_SERVICE_DUE"
+    DRIVER_WORK_SCHEDULE_UPDATED = "DRIVER_WORK_SCHEDULE_UPDATED"
 
 
 _A = frozenset({NotificationType.ADMIN_INTERNAL})
@@ -193,6 +194,7 @@ EVENT_NOTIFICATION_STREAMS: dict[NotificationEvent, frozenset[NotificationType]]
     NotificationEvent.RECIPIENT_DELIVERED: _R,
     NotificationEvent.RECIPIENT_CANCELLED: _R,
     NotificationEvent.DRIVER_VEHICLE_SERVICE_DUE: _D,
+    NotificationEvent.DRIVER_WORK_SCHEDULE_UPDATED: _D,
 }
 
 
@@ -251,6 +253,7 @@ EVENT_CATEGORIES: dict[NotificationEvent, NotificationCategory] = {
     NotificationEvent.RECIPIENT_DELIVERED: NotificationCategory.RECIPIENT_DELIVERY,
     NotificationEvent.RECIPIENT_CANCELLED: NotificationCategory.RECIPIENT_DELIVERY,
     NotificationEvent.DRIVER_VEHICLE_SERVICE_DUE: NotificationCategory.ADMIN_VEHICLE_ISSUES,
+    NotificationEvent.DRIVER_WORK_SCHEDULE_UPDATED: NotificationCategory.ADMIN_DRIVER_ISSUES,
 }
 
 
@@ -304,6 +307,7 @@ EVENT_DISPLAY_NAMES: dict[NotificationEvent, str] = {
     NotificationEvent.RECIPIENT_DELIVERED: "Delivered",
     NotificationEvent.RECIPIENT_CANCELLED: "Cancelled",
     NotificationEvent.DRIVER_VEHICLE_SERVICE_DUE: "Vehicle Service Due",
+    NotificationEvent.DRIVER_WORK_SCHEDULE_UPDATED: "Work Schedule Updated",
 }
 
 

@@ -8,6 +8,7 @@ from datetime import date
 from fastapi import Request
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.common.exceptions import ValidationError
 from app.common.service import BaseService
@@ -16,6 +17,8 @@ from app.modules.audit.service import AuditService
 from app.modules.drivers.models import Driver
 from app.modules.holidays.enums import HolidayAudience
 from app.modules.holidays.models import Holiday, HolidayAllowedDriver
+from app.modules.drivers.schedule.holiday_rules import allowed_driver_ids as get_holiday_allowed_driver_ids
+from app.modules.drivers.schedule.notify import notify_drivers_for_holiday_allow_list_change
 from app.modules.holidays.repository import HolidayAllowedDriverRepository, HolidayRepository
 from app.modules.user.models import User
 
@@ -173,6 +176,14 @@ class HolidayService(BaseService):
             severity="NOTICE",
         )
 
+        if allow_shifts and allowed_driver_ids:
+            await notify_drivers_for_holiday_allow_list_change(
+                self._session,
+                driver_ids=set(allowed_driver_ids),
+                change_summary=f"Holiday schedule rules were updated ({name})",
+                audit_user_id=audit_user_id,
+            )
+
         return holiday
 
     async def update_holiday(
@@ -188,7 +199,15 @@ class HolidayService(BaseService):
         audit_user_id: str | None = None,
         audit_user_role: str | None = None,
     ) -> Holiday:
-        holiday = await self._holiday_repo.get_by_id_or_404(holiday_id)
+        await self._holiday_repo.get_by_id_or_404(holiday_id)
+        stmt = (
+            select(Holiday)
+            .where(Holiday.id == holiday_id)
+            .options(selectinload(Holiday.allowed_drivers))
+        )
+        holiday = (await self._session.execute(stmt)).scalar_one()
+        old_allow_shifts = holiday.allow_shifts
+        old_allowed_ids = get_holiday_allowed_driver_ids(holiday) if old_allow_shifts else set()
 
         new_name = name if name is not None else holiday.name
         new_start = start_date if start_date is not None else holiday.start_date
@@ -243,7 +262,27 @@ class HolidayService(BaseService):
 
         # Ensure relationship collections are reloaded after explicit delete/insert.
         self._session.expire_all()
-        return await self._holiday_repo.get_by_id_or_404(holiday_id)
+        updated = await self._holiday_repo.get_by_id_or_404(holiday_id)
+        reload_stmt = (
+            select(Holiday)
+            .where(Holiday.id == holiday_id)
+            .options(selectinload(Holiday.allowed_drivers))
+        )
+        reloaded = (await self._session.execute(reload_stmt)).scalar_one()
+        new_allowed_ids = get_holiday_allowed_driver_ids(reloaded) if reloaded.allow_shifts else set()
+
+        schedule_rules_changed = (allow_shifts is not None and allow_shifts != old_allow_shifts) or (
+            allowed_driver_ids is not None
+        )
+        if schedule_rules_changed:
+            await notify_drivers_for_holiday_allow_list_change(
+                self._session,
+                driver_ids=old_allowed_ids | new_allowed_ids,
+                change_summary=f"Holiday work rules were updated ({reloaded.name})",
+                audit_user_id=audit_user_id,
+            )
+
+        return updated
 
     async def delete_holiday(
         self,

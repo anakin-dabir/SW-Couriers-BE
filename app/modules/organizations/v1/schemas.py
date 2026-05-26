@@ -618,8 +618,10 @@ class OrganizationCreate(BaseModel):
     # Contact phone
     phone: str | None = Field(None, max_length=50)
 
-    # Account managers — primary is mandatory; secondary and additional are optional
-    account_manager_user_id: str = Field(..., description="UUID of the primary account manager (admin user) — required")
+    # Account managers — all optional at create (assign later from client settings if needed)
+    account_manager_user_id: str | None = Field(
+        None, description="UUID of the primary account manager (admin user)"
+    )
     secondary_account_manager_user_id: str | None = Field(None, description="UUID of the secondary account manager (admin user)")
     additional_account_manager_user_id: str | None = Field(None, description="UUID of the additional account manager (admin user)")
 
@@ -631,6 +633,13 @@ class OrganizationCreate(BaseModel):
     min_charge_per_booking: Decimal | None = Field(None, gt=0, decimal_places=2, description="Minimum charge per booking in GBP")
 
     notes: str | None = None
+
+    @field_validator("account_manager_user_id", "secondary_account_manager_user_id", "additional_account_manager_user_id", mode="before")
+    @classmethod
+    def empty_account_manager_to_none(cls, v: str | None) -> str | None:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        return v
 
     @field_validator("vat_number")
     @classmethod

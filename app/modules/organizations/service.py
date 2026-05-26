@@ -234,11 +234,19 @@ async def _validate_and_enrich_pricing_plans(
         reference = (tier.base_price + tier.price_per_package).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         tier_price = str(reference)
 
-        # Snapshot of the tier's reference list price (base + per-package; excludes per-kg without weight)
-        entry["base_price"] = tier_price
-
-        # For standard plans, price_per_package must equal the global tier price
-        if entry.get("plain_type") == "standard":
+        if entry.get("plain_type") == "custom":
+            client_base = entry.get("base_price")
+            if client_base is not None and str(client_base).strip() != "":
+                entry["base_price"] = str(
+                    Decimal(str(client_base)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                )
+            else:
+                entry["base_price"] = str(
+                    tier.base_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                )
+        else:
+            # Snapshot of the tier's reference list price (base + per-package; excludes per-kg)
+            entry["base_price"] = tier_price
             entry["price_per_package"] = tier_price
 
         result.append(entry)

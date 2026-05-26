@@ -9,7 +9,6 @@ from app.common.exceptions import AuthenticationError
 from app.common.response import ok
 from app.common.schemas import AuthResponse, MessageResponse, SuccessResponse, TokenData
 from app.common.utils import get_bearer_token
-from app.core.config import settings
 from app.core.rate_limit import AUTH_RATE_LIMIT, limiter
 from app.modules.auth.cookies import clear_refresh_token_cookie, set_refresh_token_cookie
 from app.modules.auth.invite_header import InviteTokenDep
@@ -111,21 +110,6 @@ async def login(
         tokens.refresh_token_expires_in = result.tokens.refresh_token_expires_in
     elif result.tokens.refresh_token:
         set_refresh_token_cookie(response, client_type, result.tokens.refresh_token)
-        # #region agent log
-        _ua = (request.headers.get("user-agent") or "")[:120]
-        logger.info(
-            "agent_debug",
-            session_id="89e7eb",
-            hypothesis_id="D",
-            location="routes.py:login",
-            message="refresh cookie set on login",
-            client_type=client_type.value,
-            origin=request.headers.get("origin"),
-            is_safari="Safari" in _ua and "Chrome" not in _ua,
-            cookie_samesite=getattr(settings, "COOKIE_SAMESITE", None),
-            cookie_partitioned=getattr(settings, "COOKIE_SAMESITE", "none").lower() == "none",
-        )
-        # #endregion
 
     return ok(data=result.user, tokens=tokens, message="User logged in successfully")
 
@@ -146,24 +130,6 @@ def _get_refresh_token(
     if not cookie_name:
         raise AuthenticationError("Invalid client type for refresh")
     token = request.cookies.get(cookie_name)
-    # #region agent log
-    _ua = (request.headers.get("user-agent") or "")[:120]
-    _is_safari = "Safari" in _ua and "Chrome" not in _ua and "Chromium" not in _ua
-    logger.info(
-        "agent_debug",
-        session_id="89e7eb",
-        hypothesis_id="A,B,C",
-        location="routes.py:_get_refresh_token",
-        message="refresh cookie lookup",
-        client_type=client_type.value,
-        cookie_name=cookie_name,
-        has_token=bool(token),
-        cookie_keys=list(request.cookies.keys()),
-        origin=request.headers.get("origin"),
-        is_safari=_is_safari,
-        cookie_samesite=getattr(settings, "COOKIE_SAMESITE", None),
-    )
-    # #endregion
     if not token:
         raise AuthenticationError("Refresh token cookie missing or expired")
     return token

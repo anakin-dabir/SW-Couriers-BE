@@ -153,6 +153,30 @@ from app.modules.suspension_rules.v1.schemas import (
 
 router = APIRouter()
 
+
+def _optional_form_str(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = str(value).strip()
+    return stripped if stripped else None
+
+
+def _account_manager_form_fields(
+    primary: str | None,
+    secondary: str | None,
+    additional: str | None,
+) -> dict[str, str]:
+    """Only include account manager keys when a non-empty UUID was submitted."""
+    fields: dict[str, str] = {}
+    if primary_id := _optional_form_str(primary):
+        fields["account_manager_user_id"] = primary_id
+    if secondary_id := _optional_form_str(secondary):
+        fields["secondary_account_manager_user_id"] = secondary_id
+    if additional_id := _optional_form_str(additional):
+        fields["additional_account_manager_user_id"] = additional_id
+    return fields
+
+
 AdminUserDep = Annotated[CurrentUserDep, Allowed(UserRole.ADMIN)]
 OrgServiceDep = Annotated[OrganizationService, Depends(OrganizationService.dep)]
 ContactServiceDep = Annotated[OrgContactService, Depends(OrgContactService.dep)]
@@ -620,9 +644,11 @@ async def create_org_with_contacts(  # noqa: PLR0913
                 "description": description,
                 "phone": phone,
                 "eori_number": eori_number,
-                "account_manager_user_id": account_manager_user_id,
-                "secondary_account_manager_user_id": secondary_account_manager_user_id,
-                "additional_account_manager_user_id": additional_account_manager_user_id,
+                **_account_manager_form_fields(
+                    account_manager_user_id,
+                    secondary_account_manager_user_id,
+                    additional_account_manager_user_id,
+                ),
                 "pricing_plans": _parse_optional_json(pricing_plans, "pricing_plans"),
                 "pricing_agreement_start": pricing_agreement_start,
                 "pricing_agreement_end": pricing_agreement_end,

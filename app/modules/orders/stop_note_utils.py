@@ -1,8 +1,7 @@
 """Stop note type normalization and ``package_ids`` validation."""
 
-from __future__ import annotations
-
-from uuid import UUID
+from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -126,7 +125,7 @@ async def batch_package_ids_for_stop_notes(
     *,
     delivery_stop_id: str,
     order_id: str,
-    notes: list[object],
+    notes: Sequence[Any],
 ) -> dict[str, list[str]]:
     """For each note id, return validated package UUID lists (one DB round-trip)."""
     from app.modules.orders.models import Package

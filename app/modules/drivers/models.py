@@ -450,6 +450,13 @@ class DriverShift(BaseModel):
 
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="scheduled")
 
+    origin: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="MANUAL",
+        doc="ShiftOrigin value: WEEKLY_TEMPLATE or MANUAL.",
+    )
+
     driver = relationship("Driver", lazy="raise", foreign_keys=[driver_id])
 
     def __repr__(self) -> str:

@@ -87,6 +87,13 @@ class ShiftStatus(enum.StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class ShiftOrigin(enum.StrEnum):
+    """How a driver shift row was created."""
+
+    WEEKLY_TEMPLATE = "WEEKLY_TEMPLATE"
+    MANUAL = "MANUAL"
+
+
 class DriverDocumentStatus(enum.StrEnum):
     """Computed status for driver compliance documents."""
 

@@ -46,10 +46,12 @@ from app.modules.drivers.enums import (
     DriverDocumentStatus,
     DriverLiveStatus,
     DriverMapPreference,
+    ShiftOrigin,
     ShiftStatus,
     TrafficViolationStatus,
     TrafficViolationType,
 )
+from app.modules.drivers.schedule import DriverScheduleCoordinator, ScheduleContext
 from app.modules.drivers.models import (
     Driver,
     DriverDocument,
@@ -165,6 +167,14 @@ class DriverService(BaseService):
         self._stop_exec_repo = StopExecutionRepository(session)
         self._user_repo = UserRepository(session)
         self._audit = AuditService(session)
+        schedule_ctx = ScheduleContext(
+            session=session,
+            driver_repo=self._driver_repo,
+            shift_repo=self._shift_repo,
+            weekly_repo=self._weekly_repo,
+            user_repo=self._user_repo,
+        )
+        self._schedule = DriverScheduleCoordinator(schedule_ctx, self._audit)
         self._ip = get_client_ip(request) if request else None
         self._user_agent = request.headers.get("user-agent") if request else None
 
@@ -1523,6 +1533,7 @@ class DriverService(BaseService):
         end_time: time | None,
         audit_user_id: str | None = None,
         audit_user_role: str | None = None,
+        from_bulk: bool = False,
     ) -> DriverWeeklySchedule:
         if day_of_week < 0 or day_of_week > 6:
             raise ValidationError("day_of_week must be between 0 (Monday) and 6 (Sunday)")
@@ -1565,6 +1576,12 @@ class DriverService(BaseService):
                 category=AuditCategory.FLEET,
                 event_type=AuditEventType.SHIFT_UPDATED,
             )
+            if not from_bulk:
+                await self._schedule.sync_after_weekly_change(
+                    driver_id=driver_id,
+                    audit_user_id=audit_user_id,
+                    change_summary="Your weekly work schedule was updated",
+                )
             return updated
 
         created = await self._weekly_repo.create(
@@ -1591,7 +1608,15 @@ class DriverService(BaseService):
             category=AuditCategory.FLEET,
             event_type=AuditEventType.SHIFT_UPDATED,
         )
-        return created
+        result = created
+
+        if not from_bulk:
+            await self._schedule.sync_after_weekly_change(
+                driver_id=driver_id,
+                audit_user_id=audit_user_id,
+                change_summary="Your weekly work schedule was updated",
+            )
+        return result
 
     async def bulk_update_weekly_schedule(
         self,
@@ -1622,7 +1647,14 @@ class DriverService(BaseService):
                     end_time=end_time,
                     audit_user_id=audit_user_id,
                     audit_user_role=audit_user_role,
+                    from_bulk=True,
                 )
+
+        await self._schedule.sync_after_weekly_change(
+            driver_id=driver_id,
+            audit_user_id=audit_user_id,
+            change_summary="Your weekly work schedule was updated",
+        )
 
     async def get_schedule_availability_calendar(
         self,
@@ -2182,11 +2214,40 @@ class DriverService(BaseService):
     def _safe_float(value: object) -> float | None:
         if value is None:
             return None
-        try:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
             parsed = float(value)
-        except (TypeError, ValueError):
+        elif isinstance(value, Decimal):
+            parsed = float(value)
+        elif isinstance(value, str):
+            try:
+                parsed = float(value)
+            except ValueError:
+                return None
+        else:
             return None
         return parsed if math.isfinite(parsed) else None
+
+    @staticmethod
+    def _as_int(value: object, default: int = 0) -> int:
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                return default
+        return default
+
+    @staticmethod
+    def _as_optional_datetime(value: object) -> datetime | None:
+        return value if isinstance(value, datetime) else None
+
+    @staticmethod
+    def _note_items(notes_payload: dict[str, object]) -> list[object]:
+        items = notes_payload.get("items")
+        return items if isinstance(items, list) else []
 
     @staticmethod
     def _event_metadata_dict(event: RouteEvent) -> dict[str, object]:
@@ -2698,7 +2759,7 @@ class DriverService(BaseService):
     ) -> Route:
         sess = self._driver_repo.session  # type: ignore[attr-defined]
         route = await self._get_route_for_driver_or_404(route_id=route_id, driver_id=driver_id)
-        route.status = status.value
+        route.status = status
         event = RouteEvent(
             route_id=route.id,
             driver_id=driver_id,
@@ -2756,12 +2817,7 @@ class DriverService(BaseService):
         last_ping_by_route: dict[str, tuple[datetime, float] | None] = {}
 
         def _to_float(value: object) -> float | None:
-            if value is None:
-                return None
-            try:
-                return float(value)
-            except (TypeError, ValueError):
-                return None
+            return DriverService._safe_float(value)
 
         async def _get_last_ping_state(route_id: str) -> tuple[datetime, float] | None:
             cached = last_ping_by_route.get(route_id, None)
@@ -3115,7 +3171,7 @@ class DriverService(BaseService):
         ordered = sorted(
             notes,
             key=lambda x: (
-                int(x.get("sort_order") or 0),
+                DriverService._as_int(x.get("sort_order")),
                 str(x.get("note_type") or ""),
                 str(x.get("id") or ""),
             ),
@@ -3976,7 +4032,7 @@ class DriverService(BaseService):
             raise ValidationError("SIGNATURE_REQUIRED")
         pod = await self._stop_exec_repo.get_or_create_stop_pod(delivery_stop_id)
         pod.completed_at = datetime.now(UTC)
-        stop.status = RouteStopStatus.COMPLETED.value
+        stop.status = RouteStopStatus.COMPLETED
         if stop.actual_arrival is None:
             stop.actual_arrival = datetime.now(UTC)
         if notes is not None:
@@ -4031,7 +4087,8 @@ class DriverService(BaseService):
         driver_id: str,
     ) -> dict[str, object]:
         notes_payload = await self.get_stop_notes_payload(route_id=route_id, stop_id=stop_id, driver_id=driver_id)
-        important = [item for item in notes_payload.get("items", []) if isinstance(item, dict) and self._is_important_note(item)]
+        note_items = self._note_items(notes_payload)
+        important = [item for item in note_items if isinstance(item, dict) and self._is_important_note(item)]
         return {
             "route_id": notes_payload["route_id"],
             "stop_id": notes_payload["stop_id"],
@@ -4063,10 +4120,11 @@ class DriverService(BaseService):
             raise NotFoundError(resource="delivery_stop", id=delivery_stop_id)
         packages = await self._package_exec_repo.list_for_delivery_stop(delivery_stop_id)
         notes = await self.get_stop_notes_payload(route_id=route_id, stop_id=stop_id, driver_id=driver_id)
+        note_items = self._note_items(notes)
         admin_note = next(
             (
                 str(n.get("message"))
-                for n in notes.get("items", [])
+                for n in note_items
                 if isinstance(n, dict) and str(n.get("note_type") or "").upper() == "ADMIN"
             ),
             None,
@@ -4074,7 +4132,7 @@ class DriverService(BaseService):
         customer_note = next(
             (
                 str(n.get("message"))
-                for n in notes.get("items", [])
+                for n in note_items
                 if isinstance(n, dict) and str(n.get("note_type") or "").upper() == "CUSTOMER"
             ),
             None,
@@ -4085,7 +4143,7 @@ class DriverService(BaseService):
                 "package_ids": list(n.get("package_ids") or []) if isinstance(n.get("package_ids"), list) else [],
                 "images": self._package_issue_stop_note_images_payload(n.get("images")),
             }
-            for n in notes.get("items", [])
+            for n in note_items
             if isinstance(n, dict) and str(n.get("note_type") or "").upper() == "PACKAGE_ISSUE_NOTE"
         ]
         weight_total = 0.0
@@ -4141,8 +4199,8 @@ class DriverService(BaseService):
             "trackingId": stop_row.get("tracking_id"),
             "postalCode": stop_row.get("postal_code"),
             "status": _to_status(stop_row.get("status")),
-            "estimatedDeliveryTime": _to_time_string(stop_row.get("estimated_delivery_time")),
-            "actualDeliveryTime": _to_time_string(stop_row.get("actual_delivery_time")),
+            "estimatedDeliveryTime": _to_time_string(self._as_optional_datetime(stop_row.get("estimated_delivery_time"))),
+            "actualDeliveryTime": _to_time_string(self._as_optional_datetime(stop_row.get("actual_delivery_time"))),
             "packagesCount": len(packages),
             "show_admin_note": bool(admin_note),
             "show_customer_note": bool(customer_note),
@@ -4370,7 +4428,7 @@ class DriverService(BaseService):
             raise NotFoundError(resource="route", id=route_id)
         stops = await self.list_route_stops_for_driver(route_id=route_id, driver_id=driver_id)
 
-        fp_pairs = [(int(row["sequence"]), str(row["stop_id"])) for row in stops]
+        fp_pairs = [(self._as_int(row.get("sequence")), str(row.get("stop_id") or "")) for row in stops]
         current_fingerprint = compute_route_navigation_fingerprint(sequences_and_route_stop_ids=fp_pairs)
 
         latest_ping = await self._latest_location_ping_for_route(route_id=route_id)
@@ -4390,13 +4448,13 @@ class DriverService(BaseService):
             data_rows.append(
                 {
                     "stop_id": row.get("stop_id"),
-                    "sequence": int(row.get("sequence") or 0),
+                    "sequence": self._as_int(row.get("sequence")),
                     "stop_flow_type": row.get("stop_flow_type"),
                     "tracking_id": tid,
                     "location": row.get("name"),
                     "longitude": row.get("longitude"),
                     "latitude": row.get("latitude"),
-                    "packages_count": int(row.get("packages_count") or 0),
+                    "packages_count": self._as_int(row.get("packages_count")),
                     "status": _to_status(row.get("status")),
                 }
             )
@@ -4517,6 +4575,7 @@ class DriverService(BaseService):
         await self._driver_repo.get_by_id_or_404(driver_id)
         if end_time <= start_time:
             raise ValidationError("end_time must be after start_time")
+        await self._schedule.assert_driver_may_work(driver_id=driver_id, on_date=shift_date)
         await self._ensure_no_shift_conflict(
             driver_id=driver_id,
             shift_date=shift_date,
@@ -4532,6 +4591,7 @@ class DriverService(BaseService):
                 "start_time": start_dt,
                 "end_time": end_dt,
                 "status": status,
+                "origin": ShiftOrigin.MANUAL.value,
             }
         )
         await self._log_audit(
@@ -4549,6 +4609,12 @@ class DriverService(BaseService):
             severity="NOTICE",
             category=AuditCategory.FLEET,
             event_type=AuditEventType.SHIFT_CREATED,
+        )
+        await self._schedule.notify_shift_change(
+            driver_id=driver_id,
+            change_summary="A new shift was added to your schedule",
+            effective_from=shift_date.isoformat(),
+            audit_user_id=audit_user_id,
         )
         return shift
 
@@ -4574,6 +4640,7 @@ class DriverService(BaseService):
         if new_end_dt <= new_start_dt:
             raise ValidationError("end_time must be after start_time")
 
+        await self._schedule.assert_driver_may_work(driver_id=shift.driver_id, on_date=new_date)
         await self._ensure_no_shift_conflict(
             driver_id=shift.driver_id,
             shift_date=new_date,
@@ -4582,7 +4649,7 @@ class DriverService(BaseService):
             exclude_shift_id=shift.id,
         )
 
-        data: dict[str, object] = {}
+        data: dict[str, object] = {"origin": ShiftOrigin.MANUAL.value}
         if shift_date is not None:
             data["shift_date"] = shift_date
         if start_time is not None:
@@ -4591,7 +4658,7 @@ class DriverService(BaseService):
             data["end_time"] = new_end_dt
         if status is not None:
             data["status"] = status
-        if not data:
+        if len(data) == 1:
             return shift
         updated = await self._shift_repo.update_by_id(shift_id, data)
         await self._log_audit(
@@ -4609,6 +4676,12 @@ class DriverService(BaseService):
             severity="NOTICE",
             category=AuditCategory.FLEET,
             event_type=AuditEventType.SHIFT_UPDATED,
+        )
+        await self._schedule.notify_shift_change(
+            driver_id=shift.driver_id,
+            change_summary="One of your scheduled shifts was updated",
+            effective_from=new_date.isoformat(),
+            audit_user_id=audit_user_id,
         )
         return updated
 
@@ -4636,6 +4709,12 @@ class DriverService(BaseService):
             severity="NOTICE",
             category=AuditCategory.FLEET,
             event_type=AuditEventType.SHIFT_DELETED,
+        )
+        await self._schedule.notify_shift_change(
+            driver_id=shift.driver_id,
+            change_summary="A scheduled shift was removed from your calendar",
+            effective_from=shift.shift_date.isoformat(),
+            audit_user_id=audit_user_id,
         )
 
     async def activate_driver_on_login(self, *, user_id: str) -> bool:
@@ -5358,9 +5437,9 @@ class DriverService(BaseService):
         ordered = sorted(
             [
                 {
-                    "clause_order": int(c["clause_order"]),
-                    "heading": str(c["heading"]),
-                    "body": str(c["body"]),
+                    "clause_order": DriverService._as_int(c.get("clause_order")),
+                    "heading": str(c.get("heading") or ""),
+                    "body": str(c.get("body") or ""),
                 }
                 for c in clauses
             ],
@@ -5698,109 +5777,9 @@ class DriverService(BaseService):
         from_date: date,
         to_date: date,
     ) -> list[dict]:
-        """Return one entry per calendar day in [from_date, to_date] with shift, time-off, holiday, and route info.
-
-        Priority per day: TIME_OFF > HOLIDAY > shift (WORKING/REST).
-        A route is attached when one exists for that service_date regardless of day type.
-        """
-        sess = self._driver_repo.session  # type: ignore[attr-defined]
-        driver = await self._driver_repo.get_by_id_or_404(driver_id)
-
-        # Fetch shifts in range
-        shift_rows = await self.list_shifts(driver_id=driver_id, date_from=from_date, date_to=to_date)
-        shifts_by_date: dict[date, DriverShift] = {s.shift_date: s for s in shift_rows}
-
-        # Fetch time-off records overlapping range
-        time_off_stmt = (
-            select(DriverTimeOff)
-            .where(
-                DriverTimeOff.driver_id == driver_id,
-                DriverTimeOff.start_date <= to_date,
-                DriverTimeOff.end_date >= from_date,
-            )
-            .order_by(DriverTimeOff.start_date)
+        """Return one entry per calendar day in [from_date, to_date] with shift, time-off, holiday, and route info."""
+        return await self._schedule.get_driver_work_schedule(
+            driver_id=driver_id,
+            from_date=from_date,
+            to_date=to_date,
         )
-        time_off_rows = list((await sess.execute(time_off_stmt)).scalars().all())
-
-        # Build a set of (date → time_off row) — first match wins
-        time_off_by_date: dict[date, DriverTimeOff] = {}
-        for to_row in time_off_rows:
-            cur = to_row.start_date
-            while cur <= to_row.end_date:
-                if from_date <= cur <= to_date and cur not in time_off_by_date:
-                    time_off_by_date[cur] = to_row
-                cur += timedelta(days=1)
-
-        # Fetch holidays overlapping range (audience = BOTH or driver_type)
-        audience_allowed = [HolidayAudience.BOTH.value]
-        if driver.driver_type:
-            audience_allowed.append(str(driver.driver_type).upper())
-        holiday_stmt = (
-            select(Holiday)
-            .where(
-                Holiday.start_date <= to_date,
-                Holiday.end_date >= from_date,
-                Holiday.audience.in_(audience_allowed),
-            )
-            .order_by(Holiday.start_date)
-        )
-        holiday_rows = list((await sess.execute(holiday_stmt)).scalars().all())
-
-        holidays_by_date: dict[date, Holiday] = {}
-        for h in holiday_rows:
-            cur = h.start_date
-            while cur <= h.end_date:
-                if from_date <= cur <= to_date and cur not in holidays_by_date:
-                    holidays_by_date[cur] = h
-                cur += timedelta(days=1)
-
-        # Fetch routes by service_date in range
-        route_stmt = (
-            select(Route, RoutePlan.service_date, Vehicle.registration_number)
-            .join(RoutePlan, Route.plan_id == RoutePlan.id)
-            .outerjoin(Vehicle, Route.vehicle_id == Vehicle.id)
-            .where(
-                Route.driver_id == driver_id,
-                RoutePlan.service_date >= from_date,
-                RoutePlan.service_date <= to_date,
-            )
-            .order_by(RoutePlan.service_date)
-        )
-        route_result = (await sess.execute(route_stmt)).all()
-        routes_by_date: dict[date, dict] = {}
-        for route, svc_date, reg in route_result:
-            if svc_date not in routes_by_date:
-                routes_by_date[svc_date] = {
-                    "route_id": route.id,
-                    "route_code": route.route_code,
-                    "route_status": route.status,
-                    "vehicle_registration": reg,
-                }
-
-        # Build one entry per day
-        days: list[dict] = []
-        cur_day = from_date
-        while cur_day <= to_date:
-            entry: dict = {"date": cur_day, "route": routes_by_date.get(cur_day)}
-
-            if cur_day in time_off_by_date:
-                to_row = time_off_by_date[cur_day]
-                entry["day_type"] = "TIME_OFF"
-                entry["time_off_type"] = to_row.type
-                entry["time_off_is_paid"] = to_row.is_paid
-            elif cur_day in holidays_by_date:
-                h = holidays_by_date[cur_day]
-                entry["day_type"] = "HOLIDAY"
-                entry["holiday_name"] = h.name
-            elif cur_day in shifts_by_date:
-                shift = shifts_by_date[cur_day]
-                entry["day_type"] = "WORKING"
-                entry["shift_hours"] = f"{shift.start_time.strftime('%H:%M')} - {shift.end_time.strftime('%H:%M')}"
-                entry["shift_status"] = shift.status
-            else:
-                entry["day_type"] = "REST"
-
-            days.append(entry)
-            cur_day += timedelta(days=1)
-
-        return days

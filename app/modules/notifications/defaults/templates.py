@@ -1162,6 +1162,18 @@ _TEMPLATES: list[dict] = [
         "{{ due_detail }}",
         [],
     ),
+    _tpl(
+        "DRIVER_WORK_SCHEDULE_UPDATED_DRIVER_PUSH", "PUSH",
+        "Work schedule updated",
+        "{{ change_summary }}",
+        ["driver_name", "change_summary", "effective_from", "updated_at"],
+    ),
+    _tpl(
+        "DRIVER_WORK_SCHEDULE_UPDATED_DRIVER_IN_APP", "IN_APP",
+        "Work schedule updated",
+        "{{ change_summary }}",
+        ["driver_name", "change_summary", "effective_from", "updated_at"],
+    ),
 ]
 
 
