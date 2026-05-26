@@ -69,13 +69,6 @@ _DEFAULT_DRIVER_PASSWORD = "Driver@12345!"
 
 
 class LocaleProfile(StrEnum):
-    """Region-specific defaults for the bootstrap path.
-
-    ``--locale uk`` (default) seeds a Bermondsey depot, Europe/London tz, and
-    London recipients/pickup. ``--locale pk`` seeds a Karachi depot, Asia/Karachi
-    tz, and Karachi-area recipients. Add new regions here as needed.
-    """
-
     UK = "uk"
     PK = "pk"
 
@@ -186,6 +179,11 @@ _LOCALE_PROFILES: dict[LocaleProfile, _LocaleDefaults] = {
     ),
 }
 
+
+def _locale_config(locale: LocaleProfile = LocaleProfile.UK) -> _LocaleDefaults:
+    return _LOCALE_PROFILES[locale]
+
+
 _KNOWN_DRIVER_PROFILES: dict[str, dict[str, object]] = {
     "ryan.obrien@swcouriers.co.uk": {
         "first_name": "Ryan",
@@ -200,6 +198,7 @@ _KNOWN_DRIVER_PROFILES: dict[str, dict[str, object]] = {
         "title": UserTitle.MS,
     },
 }
+
 
 class AssignScenarioKey(StrEnum):
     PICKUP = "pickup"
@@ -340,10 +339,12 @@ def _driver_profile_from_email(email: str) -> dict[str, object]:
 
 
 async def _resolve_assign_depot(session: AsyncSession, *, locale: LocaleProfile) -> Depot | None:
-    # Prefer the locale-specific depot first so callers can run UK + PK in parallel
-    # without one bleeding into the other.
-    locale_code = _LOCALE_PROFILES[locale].depot_code
-    codes = [locale_code, *[c for c in DEFAULT_DEPOT_CODES if c != locale_code]]
+    cfg = _locale_config(locale)
+    if locale == LocaleProfile.UK:
+        codes = [cfg.depot_code, *[c for c in DEFAULT_DEPOT_CODES if c != cfg.depot_code]]
+    else:
+        # For non-UK locales we must not silently reuse the UK demo depot.
+        codes = [cfg.depot_code]
     for code in codes:
         depot = await session.scalar(select(Depot).where(Depot.code == code))
         if depot is not None:
@@ -352,20 +353,20 @@ async def _resolve_assign_depot(session: AsyncSession, *, locale: LocaleProfile)
 
 
 async def _get_or_create_assign_depot(session: AsyncSession, *, locale: LocaleProfile) -> Depot:
+    cfg = _locale_config(locale)
     depot = await _resolve_assign_depot(session, locale=locale)
     if depot is not None:
         return depot
 
-    profile = _LOCALE_PROFILES[locale]
     depot = Depot(
-        name=profile.depot_name,
-        code=profile.depot_code,
-        address_line_1=profile.depot_address_line_1,
-        city=profile.depot_city,
-        postcode=profile.depot_postcode,
-        latitude=profile.depot_latitude,
-        longitude=profile.depot_longitude,
-        timezone=profile.depot_timezone,
+        name=cfg.depot_name,
+        code=cfg.depot_code,
+        address_line_1=cfg.depot_address_line_1,
+        city=cfg.depot_city,
+        postcode=cfg.depot_postcode,
+        latitude=cfg.depot_latitude,
+        longitude=cfg.depot_longitude,
+        timezone=cfg.depot_timezone,
         capacity=5000,
         status="active",
         notes="Created by assign_today_* scripts (standalone bootstrap).",
@@ -377,10 +378,13 @@ async def _get_or_create_assign_depot(session: AsyncSession, *, locale: LocalePr
 
 
 async def _get_or_create_assign_vehicle(
-    session: AsyncSession, *, depot: Depot, locale: LocaleProfile
+    session: AsyncSession,
+    *,
+    depot: Depot,
+    locale: LocaleProfile,
 ) -> Vehicle:
-    vehicle_reg = _LOCALE_PROFILES[locale].vehicle_reg
-    vehicle = await session.scalar(select(Vehicle).where(Vehicle.registration_number == vehicle_reg))
+    cfg = _locale_config(locale)
+    vehicle = await session.scalar(select(Vehicle).where(Vehicle.registration_number == cfg.vehicle_reg))
     if vehicle is not None:
         if vehicle.depot_id != depot.id:
             vehicle.depot_id = depot.id
@@ -393,7 +397,7 @@ async def _get_or_create_assign_vehicle(
 
     today = datetime.now(UTC).date()
     vehicle = Vehicle(
-        registration_number=vehicle_reg,
+        registration_number=cfg.vehicle_reg,
         depot_id=depot.id,
         make="Ford",
         model="Transit",
@@ -425,11 +429,11 @@ async def _get_or_create_assign_driver(
     driver_email: str,
     depot: Depot,
     vehicle: Vehicle,
-    locale: LocaleProfile,
+    locale: LocaleProfile
 ) -> tuple[User, Driver]:
     email = driver_email.strip()
     profile = _driver_profile_from_email(email)
-    locale_defaults = _LOCALE_PROFILES[locale]
+    cfg = _locale_config(locale)
 
     user = await session.scalar(select(User).where(func.lower(User.email) == email.lower()))
     if user is None:
@@ -457,10 +461,10 @@ async def _get_or_create_assign_driver(
             vehicle_id=vehicle.id,
             capacities=["VAN"],
             driver_type=DriverType.INTERNAL.value,
-            address_line1=locale_defaults.driver_address_line_1,
-            city=locale_defaults.driver_city,
-            postcode=locale_defaults.driver_postcode,
-            state=locale_defaults.driver_state,
+            address_line1=cfg.driver_address_line_1,
+            city=cfg.driver_city,
+            postcode=cfg.driver_postcode,
+            state=cfg.driver_state,
             account_status=DriverAccountStatus.ACTIVE,
             live_status=DriverLiveStatus.OFFLINE,
         )
@@ -479,7 +483,7 @@ async def ensure_assign_prerequisites(
     session: AsyncSession,
     driver_email: str,
     *,
-    locale: LocaleProfile = LocaleProfile.UK,
+    locale: LocaleProfile = LocaleProfile.UK
 ) -> tuple[Depot, User, Driver]:
     """Ensure depot, vehicle, user, and drivers row exist (idempotent bootstrap)."""
     depot = await _get_or_create_assign_depot(session, locale=locale)
@@ -489,7 +493,7 @@ async def ensure_assign_prerequisites(
         driver_email=driver_email,
         depot=depot,
         vehicle=vehicle,
-        locale=locale,
+        locale=locale
     )
     return depot, user, driver
 
@@ -544,11 +548,9 @@ async def _ensure_org_customer_pickup(
     *,
     scenario: _Scenario,
     service_date: date,
-    locale: LocaleProfile,
+    locale: LocaleProfile
 ) -> tuple[Organization, User, PickupAddress]:
-    locale_defaults = _LOCALE_PROFILES[locale]
-    # Reference is per-locale so UK + PK demos can coexist in the same DB without
-    # accidentally sharing an org/pickup address with a different country code.
+    cfg = _locale_config(locale)
     org_ref = _fit("organizations.reference", f"DM-{locale.value.upper()}-{scenario.tag}", _LEN_ORG_REF)
     org = await session.scalar(select(Organization).where(Organization.reference == org_ref))
     if org is None:
@@ -563,9 +565,9 @@ async def _ensure_org_customer_pickup(
             date_of_incorporation=_incorporation_years_ago(service_date),
             industry=IndustryType.OTHER,
             company_size=CompanySize.EMPLOYEES_1_10,
-            reg_address_line_1=locale_defaults.org_reg_address_line_1,
-            reg_city=locale_defaults.org_reg_city,
-            reg_postcode=locale_defaults.org_reg_postcode,
+            reg_address_line_1=cfg.org_reg_address_line_1,
+            reg_city=cfg.org_reg_city,
+            reg_postcode=cfg.org_reg_postcode,
             status=OrganizationStatus.ACTIVE,
         )
         session.add(org)
@@ -600,14 +602,14 @@ async def _ensure_org_customer_pickup(
         pickup_addr = PickupAddress(
             organization_id=org.id,
             label="Assign Return Sender",
-            line_1=locale_defaults.pickup_line_1,
-            line_2=locale_defaults.pickup_line_2,
-            city=locale_defaults.pickup_city,
-            state=locale_defaults.pickup_state,
-            postcode=locale_defaults.pickup_postcode,
-            country=locale_defaults.pickup_country,
-            latitude=locale_defaults.pickup_latitude,
-            longitude=locale_defaults.pickup_longitude,
+            line_1=cfg.pickup_line_1,
+            line_2=cfg.pickup_line_2,
+            city=cfg.pickup_city,
+            state=cfg.pickup_state,
+            postcode=cfg.pickup_postcode,
+            country=cfg.pickup_country,
+            latitude=cfg.pickup_latitude,
+            longitude=cfg.pickup_longitude,
             is_default=True,
             created_by_user_id=cust.id,
         )
@@ -618,9 +620,7 @@ async def _ensure_org_customer_pickup(
 
 
 async def _get_or_create_plan(session: AsyncSession, *, depot: Depot, service_date: date) -> tuple[RoutePlan, bool]:
-    plan = await session.scalar(
-        select(RoutePlan).where(RoutePlan.depot_id == depot.id, RoutePlan.service_date == service_date)
-    )
+    plan = await session.scalar(select(RoutePlan).where(RoutePlan.depot_id == depot.id, RoutePlan.service_date == service_date))
     if plan is not None:
         return plan, False
     plan = RoutePlan(service_date=service_date, depot_id=depot.id, status=RoutePlanStatus.READY.value)
@@ -657,14 +657,15 @@ async def assign_today_driver_route(
     route_status: str = RouteStatus.ACTIVE.value,
     service_date: date | None = None,
     demote_conflicts: bool = True,
-    locale: LocaleProfile = LocaleProfile.UK,
+    locale: LocaleProfile = LocaleProfile.UK
 ) -> AssignResult:
     """Idempotent: removes prior route for this scenario/day, then creates a fresh graph."""
     scenario = _SCENARIOS[scenario_key]
+    cfg = _locale_config(locale)
     depot, _user, driver = await ensure_assign_prerequisites(session, driver_email, locale=locale)
     target_day = service_date or depot_today(depot)
-    tz_name = depot.timezone or _LOCALE_PROFILES[locale].depot_timezone
-    recipients = _LOCALE_PROFILES[locale].recipients
+    tz_name = depot.timezone or cfg.depot_timezone
+    recipients = cfg.recipients
 
     route_code = _route_code(scenario, target_day)
     await _delete_scenario_seed_rows(session, scenario=scenario, service_date=target_day)
@@ -681,9 +682,7 @@ async def assign_today_driver_route(
             print(f"[i] Demoted {demoted} other ACTIVE route(s) for this driver on {target_day}.")
 
     plan, plan_created = await _get_or_create_plan(session, depot=depot, service_date=target_day)
-    org, customer, pickup_addr = await _ensure_org_customer_pickup(
-        session, scenario=scenario, service_date=target_day, locale=locale
-    )
+    org, customer, pickup_addr = await _ensure_org_customer_pickup(session, scenario=scenario, service_date=target_day, locale=locale)
 
     route = Route(
         plan_id=plan.id,
@@ -805,9 +804,7 @@ async def assign_today_driver_route(
             notes=scenario.return_notes,
         )
 
-    route.navigation_fingerprint = compute_route_navigation_fingerprint(
-        sequences_and_route_stop_ids=[(rs.sequence, rs.id) for rs in route_stops]
-    )
+    route.navigation_fingerprint = compute_route_navigation_fingerprint(sequences_and_route_stop_ids=[(rs.sequence, rs.id) for rs in route_stops])
     await session.flush()
 
     verified = await _verify_driver_can_see_route(
@@ -857,7 +854,7 @@ async def clear_today_driver_route(
     *,
     scenario_key: AssignScenarioKey,
     service_date: date | None = None,
-    locale: LocaleProfile = LocaleProfile.UK,
+    locale: LocaleProfile = LocaleProfile.UK
 ) -> None:
     scenario = _SCENARIOS[scenario_key]
     depot = await _resolve_assign_depot(session, locale=locale)
@@ -923,12 +920,7 @@ def build_arg_parser(*, description: str) -> argparse.ArgumentParser:
         choices=[RouteStatus.ACTIVE.value, RouteStatus.ASSIGNED.value],
     )
     p_seed.add_argument("--service-date", type=lambda s: date.fromisoformat(s), default=None, metavar="YYYY-MM-DD")
-    p_seed.add_argument(
-        "--locale",
-        choices=locale_choices,
-        default=LocaleProfile.UK.value,
-        help="Region profile for the bootstrap depot/recipients (default: uk)",
-    )
+    p_seed.add_argument("--locale", choices=locale_choices, default=LocaleProfile.UK.value, help="Profile for region depot and stops addresses (default uk)")
     p_seed.add_argument(
         "--no-demote-conflicts",
         action="store_true",
@@ -942,12 +934,7 @@ def build_arg_parser(*, description: str) -> argparse.ArgumentParser:
         default=None,
         metavar="YYYY-MM-DD",
     )
-    p_clear.add_argument(
-        "--locale",
-        choices=locale_choices,
-        default=LocaleProfile.UK.value,
-        help="Region profile (default: uk)",
-    )
+    p_clear.add_argument("--locale", choices=locale_choices, default=LocaleProfile.UK.value, help="Region profile (default=uk)")
     return parser
 
 
@@ -982,7 +969,7 @@ def main_for_scenario(*, scenario_key: AssignScenarioKey, description: str, titl
                     route_status=args.route_status,
                     service_date=args.service_date,
                     demote_conflicts=not args.no_demote_conflicts,
-                    locale=locale,
+                    locale=locale
                 )
             )
         except Exception as exc:
@@ -990,7 +977,5 @@ def main_for_scenario(*, scenario_key: AssignScenarioKey, description: str, titl
             raise SystemExit(1) from exc
         print_assign_result(result, title=title)
     else:
-        asyncio.run(
-            run_clear(scenario_key=scenario_key, service_date=args.service_date, locale=locale)
-        )
+        asyncio.run(run_clear(scenario_key=scenario_key, service_date=args.service_date, locale=locale))
         print(f"Cleared {scenario_key.value} assignment ({locale.value}).")
