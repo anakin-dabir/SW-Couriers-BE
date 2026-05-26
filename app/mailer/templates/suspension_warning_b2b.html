@@ -4,18 +4,18 @@
 
 {% block content %}
 <tr>
-  <td style="padding:0 0 8px 0;font-size:15px;color:#171923;line-height:1.55;">
-    <p style="margin:0 0 14px 0;">Hi {{ name }},</p>
-    <p style="margin:0 0 14px 0;">We’ve reviewed your account activity and one of our credit control rules has identified a potential issue with your B2B account.</p>
-    <p style="margin:0 0 8px 0;font-weight:600;">Summary:</p>
+  <td style="padding:0 0 8px 0;font-size:16px;font-weight:400;color:#171923;line-height:20px;">
+    <p style="margin:0 0 14px 0;font-size:16px;font-weight:400;line-height:20px;">Hi {{ name }},</p>
+    <p style="margin:0 0 14px 0;font-size:16px;font-weight:400;line-height:20px;">We’ve reviewed your account activity and one of our credit control rules has identified a potential issue with your B2B account.</p>
+    <p style="margin:0 0 8px 0;font-weight:600;font-size:16px;line-height:20px;">Summary:</p>
     <ul style="margin:0 0 14px 20px;padding:0;">
-      <li>Rule: {{ rule_name }}</li>
-      <li>Condition: {{ condition_summary }}</li>
-      <li>Details: {{ conditions_met_human }}</li>
+      <li style="font-size:16px;font-weight:400;line-height:20px;">Rule: {{ rule_name }}</li>
+      <li style="font-size:16px;font-weight:400;line-height:20px;">Condition: {{ condition_summary }}</li>
+      <li style="font-size:16px;font-weight:400;line-height:20px;">Details: {{ conditions_met_human }}</li>
     </ul>
-    <p style="margin:0 0 14px 0;">At this stage this is a <strong>warning only</strong>. Your account remains active, but please review your outstanding invoices and credit utilisation as soon as possible to avoid any disruption to your service.</p>
+    <p style="margin:0 0 14px 0;font-size:16px;font-weight:400;line-height:20px;">At this stage this is a <strong>warning only</strong>. Your account remains active, but please review your outstanding invoices and credit utilisation as soon as possible to avoid any disruption to your service.</p>
     {% if support_email %}
-    <p style="margin:0;">If you believe this is an error or have any questions, please contact our finance team at <a href="mailto:{{ support_email }}" style="color:#b6242c;text-decoration:underline;">{{ support_email }}</a>.</p>
+    <p style="margin:0;font-size:16px;font-weight:400;line-height:20px;">If you believe this is an error or have any questions, please contact our finance team at <a href="mailto:{{ support_email }}" style="color:#b6242c;text-decoration:underline;">{{ support_email }}</a>.</p>
     {% endif %}
   </td>
 </tr>

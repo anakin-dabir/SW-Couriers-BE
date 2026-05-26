@@ -4,26 +4,26 @@
 
 {% block content %}
             <tr>
-              <td style="padding:0 0 8px 0;font-size:15px;color:#171923;line-height:1.55;">
-                <p style="margin:0 0 12px 0;">Hello,</p>
-                <p style="margin:0 0 12px 0;">
+              <td style="padding:0 0 8px 0;font-size:16px;font-weight:400;color:#171923;line-height:20px;">
+                <p style="margin:0 0 12px 0;font-size:16px;font-weight:400;line-height:20px;">Hello,</p>
+                <p style="margin:0 0 12px 0;font-size:16px;font-weight:400;line-height:20px;">
                   <strong>{{ shared_by_name }}</strong> has shared a document with you via SW Couriers.
                 </p>
                 {% if document_reference %}
-                <p style="margin:0 0 4px 0;font-size:13px;color:#6b7280;">
+                <p style="margin:0 0 4px 0;font-size:16px;font-weight:400;line-height:20px;color:#6b7280;">
                   Reference: <strong>{{ document_reference }}</strong>
                 </p>
                 {% endif %}
-                <p style="margin:0 0 12px 0;font-size:15px;font-weight:600;color:#111827;">
+                <p style="margin:0 0 12px 0;font-size:16px;font-weight:600;line-height:20px;color:#111827;">
                   {{ document_title }}
                 </p>
                 {% if message %}
-                <p style="margin:0 0 12px 0;padding:12px 16px;background:#f3f4f6;border-radius:8px;font-size:14px;color:#374151;">
+                <p style="margin:0 0 12px 0;padding:12px 16px;background:#f3f4f6;border-radius:8px;font-size:16px;font-weight:400;line-height:20px;color:#374151;">
                   {{ message }}
                 </p>
                 {% endif %}
                 {% if expiry_date %}
-                <p style="margin:0 0 12px 0;font-size:13px;color:#6b7280;">
+                <p style="margin:0 0 12px 0;font-size:16px;font-weight:400;line-height:20px;color:#6b7280;">
                   This link expires on <strong>{{ expiry_date }}</strong>.
                 </p>
                 {% endif %}
@@ -32,7 +32,7 @@
             <tr>
               <td align="center" style="padding:8px 0 16px 0;">
                 <a href="{{ share_url }}"
-                   style="display:inline-block;width:100%;max-width:260px;background-color:#b6242c;color:#ffffff;text-decoration:none;text-align:center;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;">
+                   style="display:inline-block;width:100%;max-width:260px;background-color:#b6242c;color:#ffffff;text-decoration:none;text-align:center;padding:12px 20px;border-radius:6px;font-weight:500;font-size:14px;line-height:20px;">
                   View Document
                 </a>
               </td>
@@ -40,19 +40,19 @@
             {% if otp_required %}
             <tr>
               <td style="padding:0 0 16px 0;">
-                <div style="padding:12px 16px;background:#fef9c3;border:1px solid #fde68a;border-radius:8px;font-size:14px;color:#92400e;">
-                  <p style="margin:0 0 6px 0;font-weight:600;">Secure Access Required</p>
-                  <p style="margin:0;">This document is protected. When you open the link, enter your email address to receive a one-time access code.</p>
+                <div style="padding:12px 16px;background:#fef9c3;border:1px solid #fde68a;border-radius:8px;font-size:16px;font-weight:400;line-height:20px;color:#92400e;">
+                  <p style="margin:0 0 6px 0;font-weight:600;font-size:16px;line-height:20px;">Secure Access Required</p>
+                  <p style="margin:0;font-size:16px;font-weight:400;line-height:20px;">This document is protected. When you open the link, enter your email address to receive a one-time access code.</p>
                 </div>
               </td>
             </tr>
             {% endif %}
             <tr>
-              <td style="padding:0 0 16px 0;font-size:14px;color:#475467;line-height:1.5;">
-                <p style="margin:0 0 8px 0;">
+              <td style="padding:0 0 16px 0;font-size:16px;font-weight:400;color:#475467;line-height:20px;">
+                <p style="margin:0 0 8px 0;font-size:16px;font-weight:400;line-height:20px;">
                   If the button does not work, copy and paste the link below into your browser:
                 </p>
-                <p style="word-break:break-all;margin:0;color:#2563eb;font-size:12px;">{{ share_url }}</p>
+                <p style="word-break:break-all;margin:0;color:#2563eb;font-size:16px;font-weight:400;line-height:20px;">{{ share_url }}</p>
               </td>
             </tr>
 {% endblock %}

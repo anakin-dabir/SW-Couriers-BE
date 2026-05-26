@@ -13,35 +13,35 @@
   </td>
 </tr>
 <tr>
-  <td style="padding:0 0 8px 0;font-size:15px;color:#171923;line-height:1.55;">
-    <p style="margin:0 0 8px 0;">Hi {{ recipient_name|default("there") }},</p>
-    <p style="margin:0 0 16px 0;">A credit alert has been triggered for <strong>{{ org_name }}</strong>.</p>
+  <td style="padding:0 0 8px 0;font-size:16px;font-weight:400;color:#171923;line-height:20px;">
+    <p style="margin:0 0 8px 0;font-size:16px;font-weight:400;line-height:20px;">Hi {{ recipient_name|default("there") }},</p>
+    <p style="margin:0 0 16px 0;font-size:16px;font-weight:400;line-height:20px;">A credit alert has been triggered for <strong>{{ org_name }}</strong>.</p>
 
     <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border:1px solid #e5e7eb;border-radius:8px;">
       <tr>
         <td style="padding:12px 14px;border-bottom:1px solid #e5e7eb;">
-          <div style="font-size:12px;color:#475467;text-transform:uppercase;letter-spacing:.4px;">Alert</div>
-          <div style="font-size:15px;color:#171923;font-weight:600;margin-top:2px;">{{ title }}</div>
+          <div style="font-size:16px;font-weight:400;line-height:20px;color:#475467;text-transform:uppercase;letter-spacing:.4px;">Alert</div>
+          <div style="font-size:16px;font-weight:600;line-height:20px;color:#171923;margin-top:2px;">{{ title }}</div>
         </td>
       </tr>
       <tr>
         <td style="padding:12px 14px;border-bottom:1px solid #e5e7eb;">
-          <div style="font-size:12px;color:#475467;text-transform:uppercase;letter-spacing:.4px;">Summary</div>
-          <div style="font-size:14px;color:#171923;margin-top:2px;">{{ summary }}</div>
+          <div style="font-size:16px;font-weight:400;line-height:20px;color:#475467;text-transform:uppercase;letter-spacing:.4px;">Summary</div>
+          <div style="font-size:16px;font-weight:400;line-height:20px;color:#171923;margin-top:2px;">{{ summary }}</div>
         </td>
       </tr>
       <tr>
         <td style="padding:12px 14px;">
-          <div style="font-size:12px;color:#475467;text-transform:uppercase;letter-spacing:.4px;">Triggered</div>
-          <div style="font-size:14px;color:#171923;margin-top:2px;">{{ triggered_at_display }}</div>
+          <div style="font-size:16px;font-weight:400;line-height:20px;color:#475467;text-transform:uppercase;letter-spacing:.4px;">Triggered</div>
+          <div style="font-size:16px;font-weight:400;line-height:20px;color:#171923;margin-top:2px;">{{ triggered_at_display }}</div>
         </td>
       </tr>
     </table>
 
     {% if action_url %}
-    <p style="margin:20px 0 0 0;text-align:center;">
+    <p style="margin:20px 0 0 0;text-align:center;font-size:16px;font-weight:400;line-height:20px;">
       <a href="{{ action_url }}"
-        style="display:inline-block;padding:10px 18px;background-color:#b6242c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+        style="display:inline-block;padding:12px 20px;background-color:#b6242c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:500;font-size:14px;line-height:20px;">
         Review in SW Couriers
       </a>
     </p>

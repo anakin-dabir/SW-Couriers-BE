@@ -4,23 +4,23 @@
 
 {% block content %}
 <tr>
-  <td style="padding:0 0 8px 0;font-size:15px;color:#171923;line-height:1.55;">
-    <p style="margin:0 0 14px 0;">Hi Finance Team,</p>
-    <p style="margin:0 0 14px 0;">A suspension rule has been triggered for a B2B customer account.</p>
-    <p style="margin:0 0 8px 0;font-weight:600;">Account:</p>
+  <td style="padding:0 0 8px 0;font-size:16px;font-weight:400;color:#171923;line-height:20px;">
+    <p style="margin:0 0 14px 0;font-size:16px;font-weight:400;line-height:20px;">Hi Finance Team,</p>
+    <p style="margin:0 0 14px 0;font-size:16px;font-weight:400;line-height:20px;">A suspension rule has been triggered for a B2B customer account.</p>
+    <p style="margin:0 0 8px 0;font-weight:600;font-size:16px;line-height:20px;">Account:</p>
     <ul style="margin:0 0 14px 20px;padding:0;">
-      <li>Name: {{ account_name }}</li>
-      <li>Email: {{ account_email }}</li>
-      {% if organization_name %}<li>Organisation: {{ organization_name }}</li>{% endif %}
+      <li style="font-size:16px;font-weight:400;line-height:20px;">Name: {{ account_name }}</li>
+      <li style="font-size:16px;font-weight:400;line-height:20px;">Email: {{ account_email }}</li>
+      {% if organization_name %}<li style="font-size:16px;font-weight:400;line-height:20px;">Organisation: {{ organization_name }}</li>{% endif %}
     </ul>
-    <p style="margin:0 0 8px 0;font-weight:600;">Rule:</p>
+    <p style="margin:0 0 8px 0;font-weight:600;font-size:16px;line-height:20px;">Rule:</p>
     <ul style="margin:0 0 14px 20px;padding:0;">
-      <li>Name: {{ rule_name }}</li>
-      <li>Condition: {{ condition_summary }}</li>
-      <li>Details: {{ conditions_met_human }}</li>
-      <li>Action taken: {{ action_taken_human }}</li>
+      <li style="font-size:16px;font-weight:400;line-height:20px;">Name: {{ rule_name }}</li>
+      <li style="font-size:16px;font-weight:400;line-height:20px;">Condition: {{ condition_summary }}</li>
+      <li style="font-size:16px;font-weight:400;line-height:20px;">Details: {{ conditions_met_human }}</li>
+      <li style="font-size:16px;font-weight:400;line-height:20px;">Action taken: {{ action_taken_human }}</li>
     </ul>
-    <p style="margin:0;">Please review this account and take any additional action you deem necessary.</p>
+    <p style="margin:0;font-size:16px;font-weight:400;line-height:20px;">Please review this account and take any additional action you deem necessary.</p>
   </td>
 </tr>
 {% endblock %}
